@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>株帳 — 日本株ポートフォリオ帳簿</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#F6F7F4">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="株帳">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F6F7F4;
+  --card:#FFFFFF;
+  --ink:#1B1D1B;
+  --rule:#D8DBD3;
+  --rule-strong:#AEB4A9;
+  --muted:#6B7268;
+  --gain:#1E6E52;
+  --gain-soft:#E4F0EA;
+  --loss:#B5382A;
+  --loss-soft:#F7E8E5;
+  --indigo:#28466B;
+  --indigo-soft:#E7EDF4;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --mincho:'Shippori Mincho',serif;
+  --gothic:'Zen Kaku Gothic New',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--gothic);
+  font-size:15px;
+  line-height:1.6;
+  padding:calc(20px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(64px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));
+}
+.wrap{max-width:920px;margin:0 auto}
+
+/* ===== header ===== */
+header{
+  display:flex;align-items:stretch;gap:18px;
+  border-bottom:3px double var(--rule-strong);
+  padding-bottom:18px;margin-bottom:26px;
+}
+.brand{
+  writing-mode:vertical-rl;
+  font-family:var(--mincho);font-weight:700;
+  font-size:34px;letter-spacing:.35em;
+  border:1.5px solid var(--ink);
+  padding:10px 6px;line-height:1;
+  background:var(--card);
+  flex:none;
+}
+.head-body{flex:1;display:flex;flex-direction:column;justify-content:space-between;gap:10px}
+.tagline{font-family:var(--mincho);font-weight:600;font-size:17px}
+.subline{color:var(--muted);font-size:12.5px}
+.head-actions{display:flex;gap:8px;flex-wrap:wrap}
+button{
+  font-family:var(--gothic);font-size:13px;font-weight:500;
+  border:1px solid var(--ink);background:var(--card);color:var(--ink);
+  padding:7px 14px;cursor:pointer;border-radius:2px;
+}
+button:hover{background:var(--ink);color:var(--paper)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--indigo);outline-offset:2px}
+button.primary{background:var(--indigo);border-color:var(--indigo);color:#fff}
+button.primary:hover{background:#1d3450}
+button.ghost{border-color:var(--rule-strong);color:var(--muted)}
+button.ghost:hover{background:var(--muted);border-color:var(--muted);color:#fff}
+
+/* ===== summary ledger strip ===== */
+.summary{
+  display:grid;grid-template-columns:repeat(4,1fr);
+  background:var(--card);border:1px solid var(--rule);
+  margin-bottom:26px;
+}
+.sum-cell{padding:16px 18px;border-right:1px solid var(--rule)}
+.sum-cell:last-child{border-right:none}
+.sum-label{font-size:11.5px;color:var(--muted);letter-spacing:.12em;margin-bottom:4px}
+.sum-value{font-family:var(--mono);font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sum-note{font-size:11px;color:var(--muted);margin-top:2px}
+.pos{color:var(--gain)}
+.neg{color:var(--loss)}
+
+/* ===== sections ===== */
+section{margin-bottom:34px}
+h2{
+  font-family:var(--mincho);font-size:18px;font-weight:700;
+  display:flex;align-items:baseline;gap:10px;
+  margin-bottom:12px;
+}
+h2 .en{font-family:var(--mono);font-size:10.5px;font-weight:400;color:var(--muted);letter-spacing:.18em}
+
+/* ===== allocation bar ===== */
+.alloc-bar{display:flex;height:34px;border:1px solid var(--rule);background:var(--card);overflow:hidden}
+.alloc-seg{height:100%;min-width:2px;position:relative;transition:opacity .15s}
+.alloc-seg:hover{opacity:.75}
+.alloc-legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:10px;font-size:12px}
+.alloc-key{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.alloc-dot{width:9px;height:9px;flex:none}
+.alloc-key b{color:var(--ink);font-weight:500}
+.alloc-key .mono{font-family:var(--mono);font-size:11.5px}
+
+/* ===== holdings table ===== */
+.table-card{background:var(--card);border:1px solid var(--rule);overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:680px}
+th{
+  font-size:11px;font-weight:500;color:var(--muted);letter-spacing:.08em;
+  text-align:right;padding:10px 12px;border-bottom:1.5px solid var(--ink);
+  white-space:nowrap;
+}
+th:first-child{text-align:left}
+td{
+  padding:10px 12px;border-bottom:1px solid var(--rule);
+  font-family:var(--mono);font-size:13.5px;font-variant-numeric:tabular-nums;
+  text-align:right;white-space:nowrap;
+}
+td.name-cell{text-align:left;font-family:var(--gothic)}
+td.name-cell .code{font-family:var(--mono);font-size:11px;color:var(--muted);display:block}
+td.name-cell .nm{font-weight:500;font-size:13.5px}
+tr:last-child td{border-bottom:none}
+td input{
+  font-family:var(--mono);font-size:13px;text-align:right;
+  width:84px;border:1px solid var(--rule);padding:4px 6px;
+  background:var(--paper);border-radius:2px;
+}
+.row-del{
+  font-size:11px;border:none;background:none;color:var(--muted);
+  cursor:pointer;padding:2px 6px;
+}
+.row-del:hover{color:var(--loss);background:none}
+
+/* ===== add form ===== */
+.add-form{
+  display:grid;grid-template-columns:repeat(6,1fr) auto;gap:8px;
+  background:var(--indigo-soft);border:1px solid var(--rule);
+  border-top:none;padding:12px;
+}
+.add-form input{
+  font-family:var(--mono);font-size:13px;padding:7px 8px;
+  border:1px solid var(--rule-strong);border-radius:2px;width:100%;
+  background:#fff;
+}
+.add-form input::placeholder{font-family:var(--gothic);color:#9aa096;font-size:12px}
+
+/* ===== simulator ===== */
+.sim-card{background:var(--card);border:1px solid var(--rule);padding:20px}
+.sim-intro{font-size:13px;color:var(--muted);margin-bottom:14px}
+.sim-realized{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;font-size:13.5px}
+.sim-realized input{
+  font-family:var(--mono);font-size:14px;text-align:right;
+  width:150px;padding:7px 9px;border:1px solid var(--rule-strong);border-radius:2px;
+  background:var(--paper);
+}
+.sim-list{display:flex;flex-direction:column;border-top:1px solid var(--rule);margin-bottom:16px}
+.sim-row{
+  display:flex;align-items:center;gap:12px;
+  padding:9px 4px;border-bottom:1px solid var(--rule);
+  font-size:13.5px;cursor:pointer;
+}
+.sim-row input[type=checkbox]{width:16px;height:16px;accent-color:var(--indigo);flex:none}
+.sim-row .sr-name{flex:1}
+.sim-row .sr-pl{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.sim-result{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:1px;
+  background:var(--rule);border:1px solid var(--rule);
+}
+.sim-res-cell{background:var(--paper);padding:14px 16px}
+.sim-res-label{font-size:11.5px;color:var(--muted);margin-bottom:3px}
+.sim-res-value{font-family:var(--mono);font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+.sim-verdict{
+  margin-top:14px;padding:12px 14px;font-size:13.5px;
+  border-left:3px solid var(--indigo);background:var(--indigo-soft);
+}
+.sim-verdict.good{border-left-color:var(--gain);background:var(--gain-soft)}
+.sim-verdict.warn{border-left-color:var(--loss);background:var(--loss-soft)}
+
+/* ===== footer ===== */
+footer{
+  border-top:3px double var(--rule-strong);
+  padding-top:16px;font-size:11.5px;color:var(--muted);line-height:1.8;
+}
+
+/* ===== mobile ===== */
+@media(max-width:640px){
+  body{padding:14px 10px 48px}
+  .summary{grid-template-columns:repeat(2,1fr)}
+  .sum-cell:nth-child(2){border-right:none}
+  .sum-cell:nth-child(1),.sum-cell:nth-child(2){border-bottom:1px solid var(--rule)}
+  .sum-value{font-size:19px}
+  .brand{font-size:26px}
+  .add-form{grid-template-columns:repeat(2,1fr)}
+  .add-form button{grid-column:span 2}
+  .sim-result{grid-template-columns:1fr}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="brand">株帳</div>
+  <div class="head-body">
+    <div>
+      <div class="tagline">持株を、帳簿のように。</div>
+      <div class="subline">日本株ポートフォリオの損益・配当・損益通算をブラウザだけで管理。データは端末の外に送信されません。</div>
+    </div>
+    <div class="head-actions">
+      <button class="primary" id="btnExport">帳簿を書き出す (JSON)</button>
+      <button id="btnImport">読み込む</button>
+      <button class="ghost" id="btnSample">サンプルに戻す</button>
+      <input type="file" id="fileImport" accept=".json" style="display:none">
+    </div>
+  </div>
+</header>
+
+<div class="summary" id="summary"></div>
+
+<section>
+  <h2>資産配分 <span class="en">ALLOCATION</span></h2>
+  <div class="alloc-bar" id="allocBar"></div>
+  <div class="alloc-legend" id="allocLegend"></div>
+</section>
+
+<section>
+  <h2>保有銘柄 <span class="en">HOLDINGS</span></h2>
+  <div class="table-card">
+    <table>
+      <thead>
+        <tr>
+          <th>銘柄</th><th>株数</th><th>取得単価</th><th>現在値</th>
+          <th>評価額</th><th>評価損益</th><th>年間配当</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+  <div class="add-form">
+    <input id="fCode" placeholder="コード (7203)" inputmode="numeric">
+    <input id="fName" placeholder="銘柄名">
+    <input id="fShares" placeholder="株数" inputmode="numeric">
+    <input id="fCost" placeholder="取得単価" inputmode="decimal">
+    <input id="fPrice" placeholder="現在値" inputmode="decimal">
+    <input id="fDiv" placeholder="1株配当" inputmode="decimal">
+    <button class="primary" id="btnAdd">追加</button>
+  </div>
+</section>
+
+<section>
+  <h2>損益通算シミュレーター <span class="en">TAX-LOSS HARVESTING</span></h2>
+  <div class="sim-card">
+    <p class="sim-intro">売却したい銘柄にチェックを入れると、今年すでに確定した損益と通算した場合の税額への影響を試算します(税率 20.315%・特定口座内の概算)。</p>
+    <div class="sim-realized">
+      <label for="realizedInput">今年の確定済み損益</label>
+      <input id="realizedInput" inputmode="numeric" value="0"> 円
+    </div>
+    <div class="sim-list" id="simList"></div>
+    <div class="sim-result" id="simResult"></div>
+    <div class="sim-verdict" id="simVerdict"></div>
+  </div>
+</section>
+
+<footer>
+  <p><b>株帳</b> はブラウザ内だけで動く帳簿です。入力データはこの端末内にのみ自動保存され、サーバーには一切送信されません。機種変更やバックアップには「帳簿を書き出す」でJSONを保存してください。</p>
+  <p>本ツールは計算・記録のための道具であり、特定の金融商品の売買を推奨するものではありません。税額は概算であり、実際の課税は口座区分・他の所得等により異なります。最終的な判断はご自身の責任で、必要に応じて税理士等の専門家にご相談ください。</p>
+</footer>
+
+</div>
+
+<script>
+'use strict';
+const TAX = 0.20315;
+const COLORS = ['#28466B','#1E6E52','#8A6D2F','#6B4A6E','#3E7A85','#7A4A32','#4E5D3A','#5C5470'];
+
+const SAMPLE = [
+  {code:'7203', name:'トヨタ自動車', shares:100, cost:3200, price:3455, div:90},
+  {code:'8306', name:'三菱UFJ',     shares:200, cost:1750, price:2110, div:64},
+  {code:'9432', name:'NTT',        shares:1000, cost:155,  price:149,  div:5.2},
+  {code:'4568', name:'第一三共',    shares:100, cost:5400, price:4980, div:60},
+  {code:'8058', name:'三菱商事',    shares:100, cost:2900, price:3125, div:110}
+];
+
+const STORE_KEY = 'kabucho-holdings-v1';
+function loadStore(){
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(raw){ const d = JSON.parse(raw); if(Array.isArray(d) && d.length) return d; }
+  }catch(e){}
+  return JSON.parse(JSON.stringify(SAMPLE));
+}
+function saveStore(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(holdings)); }catch(e){}
+}
+let holdings = loadStore();
+let sellSet = new Set();
+
+const yen = n => (n<0?'△':'') + Math.round(Math.abs(n)).toLocaleString('ja-JP') + '円';
+const signYen = n => (n>0?'+':n<0?'△':'') + Math.round(Math.abs(n)).toLocaleString('ja-JP') + '円';
+const clsOf = n => n>0?'pos':n<0?'neg':'';
+
+function calc(h){
+  const mv = h.shares*h.price, cost = h.shares*h.cost;
+  return {mv, cost, pl: mv-cost, divTotal: h.shares*(h.div||0)};
+}
+
+function renderAll(){
+  renderSummary(); renderAlloc(); renderTable(); renderSim();
+}
+
+function renderSummary(){
+  let mv=0, cost=0, div=0;
+  holdings.forEach(h=>{const c=calc(h); mv+=c.mv; cost+=c.cost; div+=c.divTotal;});
+  const pl = mv-cost;
+  const plPct = cost>0 ? (pl/cost*100) : 0;
+  const yieldPct = mv>0 ? (div/mv*100) : 0;
+  document.getElementById('summary').innerHTML = `
+    <div class="sum-cell"><div class="sum-label">評価額</div>
+      <div class="sum-value">${yen(mv)}</div>
+      <div class="sum-note">取得額 ${yen(cost)}</div></div>
+    <div class="sum-cell"><div class="sum-label">評価損益</div>
+      <div class="sum-value ${clsOf(pl)}">${signYen(pl)}</div>
+      <div class="sum-note ${clsOf(pl)}">${pl>=0?'+':'△'}${Math.abs(plPct).toFixed(1)}%</div></div>
+    <div class="sum-cell"><div class="sum-label">年間配当(予想)</div>
+      <div class="sum-value">${yen(div)}</div>
+      <div class="sum-note">税引後 約${yen(div*(1-TAX))}</div></div>
+    <div class="sum-cell"><div class="sum-label">配当利回り</div>
+      <div class="sum-value">${yieldPct.toFixed(2)}%</div>
+      <div class="sum-note">評価額ベース</div></div>`;
+}
+
+function renderAlloc(){
+  const total = holdings.reduce((s,h)=>s+calc(h).mv,0);
+  const bar = document.getElementById('allocBar');
+  const leg = document.getElementById('allocLegend');
+  if(total<=0 || holdings.length===0){
+    bar.innerHTML=''; leg.innerHTML='<span class="alloc-key">銘柄を追加すると配分が表示されます</span>'; return;
+  }
+  const sorted = holdings.map((h,i)=>({h,i,mv:calc(h).mv})).sort((a,b)=>b.mv-a.mv);
+  bar.innerHTML = sorted.map((x,k)=>
+    `<div class="alloc-seg" style="width:${(x.mv/total*100)}%;background:${COLORS[k%COLORS.length]}" title="${x.h.name} ${(x.mv/total*100).toFixed(1)}%"></div>`
+  ).join('');
+  leg.innerHTML = sorted.map((x,k)=>
+    `<span class="alloc-key"><span class="alloc-dot" style="background:${COLORS[k%COLORS.length]}"></span><b>${x.h.name}</b><span class="mono">${(x.mv/total*100).toFixed(1)}%</span></span>`
+  ).join('');
+}
+
+function renderTable(){
+  const tb = document.getElementById('tbody');
+  if(holdings.length===0){
+    tb.innerHTML = '<tr><td colspan="8" class="name-cell" style="color:var(--muted)">保有銘柄がありません。下のフォームから追加してください。</td></tr>';
+    return;
+  }
+  tb.innerHTML = holdings.map((h,i)=>{
+    const c = calc(h);
+    return `<tr>
+      <td class="name-cell"><span class="code">${h.code}</span><span class="nm">${h.name}</span></td>
+      <td><input data-i="${i}" data-f="shares" value="${h.shares}" inputmode="numeric"></td>
+      <td><input data-i="${i}" data-f="cost" value="${h.cost}" inputmode="decimal"></td>
+      <td><input data-i="${i}" data-f="price" value="${h.price}" inputmode="decimal"></td>
+      <td>${yen(c.mv)}</td>
+      <td class="${clsOf(c.pl)}">${signYen(c.pl)}</td>
+      <td>${yen(c.divTotal)}</td>
+      <td><button class="row-del" data-del="${i}" aria-label="${h.name}を削除">削除</button></td>
+    </tr>`;
+  }).join('');
+}
+
+function renderSim(){
+  const list = document.getElementById('simList');
+  list.innerHTML = holdings.map((h,i)=>{
+    const c = calc(h);
+    return `<label class="sim-row">
+      <input type="checkbox" data-sim="${i}" ${sellSet.has(i)?'checked':''}>
+      <span class="sr-name">${h.name} <span style="color:var(--muted);font-size:11px">×${h.shares}</span></span>
+      <span class="sr-pl ${clsOf(c.pl)}">${signYen(c.pl)}</span>
+    </label>`;
+  }).join('') || '<div style="padding:10px;color:var(--muted);font-size:13px">銘柄を追加すると選択できます</div>';
+
+  const realized = parseFloat(String(document.getElementById('realizedInput').value).replace(/[,，]/g,'')) || 0;
+  let harvest = 0;
+  sellSet.forEach(i=>{ if(holdings[i]) harvest += calc(holdings[i]).pl; });
+  const after = realized + harvest;
+  const taxBefore = Math.max(realized,0)*TAX;
+  const taxAfter = Math.max(after,0)*TAX;
+  const diff = taxAfter - taxBefore;
+
+  document.getElementById('simResult').innerHTML = `
+    <div class="sim-res-cell"><div class="sim-res-label">売却で実現する損益</div>
+      <div class="sim-res-value ${clsOf(harvest)}">${signYen(harvest)}</div></div>
+    <div class="sim-res-cell"><div class="sim-res-label">通算後の年間損益</div>
+      <div class="sim-res-value ${clsOf(after)}">${signYen(after)}</div></div>
+    <div class="sim-res-cell"><div class="sim-res-label">税額の増減</div>
+      <div class="sim-res-value ${clsOf(-diff)}">${diff===0?'±0円':signYen(diff)}</div></div>`;
+
+  const v = document.getElementById('simVerdict');
+  if(sellSet.size===0){
+    v.className='sim-verdict';
+    v.textContent='銘柄を選択すると試算結果がここに表示されます。';
+  } else if(diff<0){
+    v.className='sim-verdict good';
+    v.textContent=`損益通算により税負担が約${yen(-diff)}軽くなります(源泉徴収済みの場合は還付見込み)。受渡日が年内に収まるかをご確認ください。`;
+  } else if(after<0){
+    v.className='sim-verdict';
+    v.textContent=`通算後も損失が${yen(-after)}残ります。確定申告により最大3年間の繰越控除が可能です。`;
+  } else if(diff>0){
+    v.className='sim-verdict warn';
+    v.textContent=`利益確定により税額が約${yen(diff)}増える見込みです。`;
+  } else {
+    v.className='sim-verdict';
+    v.textContent='税額への影響はありません。';
+  }
+}
+
+/* ===== events ===== */
+document.addEventListener('input', e=>{
+  const t = e.target;
+  if(t.dataset.f !== undefined && t.dataset.i !== undefined){
+    const val = parseFloat(String(t.value).replace(/[,，]/g,''));
+    if(!isNaN(val)) holdings[t.dataset.i][t.dataset.f] = val;
+    saveStore();
+    renderSummary(); renderAlloc(); renderSim();
+  }
+  if(t.id==='realizedInput') renderSim();
+});
+document.addEventListener('change', e=>{
+  if(e.target.dataset.sim !== undefined){
+    const i = Number(e.target.dataset.sim);
+    e.target.checked ? sellSet.add(i) : sellSet.delete(i);
+    renderSim();
+  }
+});
+document.addEventListener('click', e=>{
+  if(e.target.dataset.del !== undefined){
+    holdings.splice(Number(e.target.dataset.del),1);
+    sellSet.clear(); saveStore(); renderAll();
+  }
+});
+document.getElementById('btnAdd').addEventListener('click', ()=>{
+  const g = id=>document.getElementById(id);
+  const h = {
+    code:g('fCode').value.trim()||'—',
+    name:g('fName').value.trim(),
+    shares:parseFloat(g('fShares').value)||0,
+    cost:parseFloat(g('fCost').value)||0,
+    price:parseFloat(g('fPrice').value)||0,
+    div:parseFloat(g('fDiv').value)||0
+  };
+  if(!h.name || h.shares<=0){ alert('銘柄名と株数を入力してください'); return; }
+  holdings.push(h);
+  saveStore();
+  ['fCode','fName','fShares','fCost','fPrice','fDiv'].forEach(id=>g(id).value='');
+  renderAll();
+});
+document.getElementById('btnExport').addEventListener('click', ()=>{
+  const blob = new Blob([JSON.stringify({app:'kabucho',version:1,holdings},null,2)],{type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'kabucho.json';
+  a.click(); URL.revokeObjectURL(a.href);
+});
+document.getElementById('btnImport').addEventListener('click', ()=>document.getElementById('fileImport').click());
+document.getElementById('fileImport').addEventListener('change', e=>{
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{
+    try{
+      const d = JSON.parse(r.result);
+      if(Array.isArray(d.holdings)){ holdings = d.holdings; sellSet.clear(); saveStore(); renderAll(); }
+      else alert('株帳のJSONファイルではありません');
+    }catch{ alert('ファイルを読み込めませんでした'); }
+  };
+  r.readAsText(f);
+  e.target.value='';
+});
+document.getElementById('btnSample').addEventListener('click', ()=>{
+  holdings = JSON.parse(JSON.stringify(SAMPLE)); sellSet.clear(); saveStore(); renderAll();
+});
+
+renderAll();
+
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>

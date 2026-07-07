@@ -1,4 +1,4 @@
-const CACHE = 'kabucho-v4';
+const CACHE = 'kabucho-v5';
 const ASSETS = [
   './',
   './index.html',
@@ -20,9 +20,23 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Cache-first; network fallback then cache the result (fonts etc.)
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  const isPage = e.request.mode === 'navigate' || e.request.url.includes('index.html');
+
+  if (isPage) {
+    // NETWORK-FIRST for the app page: updates land immediately, cache only as offline fallback
+    e.respondWith(
+      fetch(e.request).then(res => {
+        const copy = res.clone();
+        caches.open(CACHE).then(c => c.put(e.request, copy));
+        return res;
+      }).catch(() => caches.match(e.request).then(hit => hit || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // cache-first for static assets (icons, fonts)
   e.respondWith(
     caches.match(e.request).then(hit => {
       if (hit) return hit;
@@ -33,7 +47,7 @@ self.addEventListener('fetch', e => {
           caches.open(CACHE).then(c => c.put(e.request, copy));
         }
         return res;
-      }).catch(() => caches.match('./index.html'));
+      });
     })
   );
 });

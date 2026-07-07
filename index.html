@@ -110,7 +110,7 @@ h2 .en{font-family:var(--mono);font-size:10.5px;font-weight:400;color:var(--mute
 
 /* ===== holdings table ===== */
 .table-card{background:var(--card);border:1px solid var(--rule);overflow-x:auto}
-table{width:100%;border-collapse:collapse;min-width:680px}
+table{width:100%;border-collapse:collapse;min-width:900px}
 th{
   font-size:11px;font-weight:500;color:var(--muted);letter-spacing:.08em;
   text-align:right;padding:10px 12px;border-bottom:1.5px solid var(--ink);
@@ -131,6 +131,7 @@ td input{
   width:84px;border:1px solid var(--rule);padding:4px 6px;
   background:var(--paper);border-radius:2px;
 }
+td input[type=date]{width:136px;font-size:12px;text-align:left}
 .row-del{
   font-size:11px;border:none;background:none;color:var(--muted);
   cursor:pointer;padding:2px 6px;
@@ -139,7 +140,7 @@ td input{
 
 /* ===== add form ===== */
 .add-form{
-  display:grid;grid-template-columns:repeat(6,1fr) auto;gap:8px;
+  display:grid;grid-template-columns:repeat(4,1fr);gap:8px;
   background:var(--indigo-soft);border:1px solid var(--rule);
   border-top:none;padding:12px;
 }
@@ -214,11 +215,16 @@ footer{
       <div class="subline">日本株ポートフォリオの損益・配当・損益通算をブラウザだけで管理。データは端末の外に送信されません。</div>
     </div>
     <div class="head-actions">
-      <button class="primary" id="btnExport">帳簿を書き出す (JSON)</button>
+      <button class="primary" id="btnShot">📷 スクショ取込</button>
+      <button id="btnDivFetch">配当を自動取得</button>
+      <button id="btnExport">書き出す</button>
       <button id="btnImport">読み込む</button>
-      <button class="ghost" id="btnSample">サンプルに戻す</button>
+      <button class="ghost" id="btnSample">サンプル</button>
+      <button class="ghost" id="btnKey">⚙ APIキー</button>
       <input type="file" id="fileImport" accept=".json" style="display:none">
+      <input type="file" id="shotInput" accept="image/*" style="display:none">
     </div>
+    <div class="subline" id="status" aria-live="polite"></div>
   </div>
 </header>
 
@@ -236,8 +242,8 @@ footer{
     <table>
       <thead>
         <tr>
-          <th>銘柄</th><th>株数</th><th>取得単価</th><th>現在値</th>
-          <th>評価額</th><th>評価損益</th><th>年間配当</th><th></th>
+          <th>銘柄</th><th>購入日</th><th>株数</th><th>取得単価</th><th>現在値</th>
+          <th>評価額</th><th>評価損益</th><th>年間配当</th><th>取得来配当(概算)</th><th></th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -249,8 +255,9 @@ footer{
     <input id="fShares" placeholder="株数" inputmode="numeric">
     <input id="fCost" placeholder="取得単価" inputmode="decimal">
     <input id="fPrice" placeholder="現在値" inputmode="decimal">
-    <input id="fDiv" placeholder="1株配当" inputmode="decimal">
-    <button class="primary" id="btnAdd">追加</button>
+    <input id="fDiv" placeholder="1株配当(空欄可)" inputmode="decimal">
+    <input id="fDate" type="date" aria-label="購入日">
+    <button class="primary" id="btnAdd" style="grid-column:span 2">追加</button>
   </div>
 </section>
 
@@ -269,7 +276,7 @@ footer{
 </section>
 
 <footer>
-  <p><b>株帳</b> はブラウザ内だけで動く帳簿です。入力データはこの端末内にのみ自動保存され、サーバーには一切送信されません。機種変更やバックアップには「帳簿を書き出す」でJSONを保存してください。</p>
+  <p><b>株帳</b> はブラウザ内だけで動く帳簿です。入力データはこの端末内にのみ自動保存されます。「スクショ取込」「配当を自動取得」を使う場合のみ、対象の画像・銘柄コードがAnthropic APIに送信されます(APIキーはご自身のものを使用、端末内に保存)。機種変更やバックアップには「帳簿を書き出す」でJSONを保存してください。</p>
   <p>本ツールは計算・記録のための道具であり、特定の金融商品の売買を推奨するものではありません。税額は概算であり、実際の課税は口座区分・他の所得等により異なります。最終的な判断はご自身の責任で、必要に応じて税理士等の専門家にご相談ください。</p>
 </footer>
 
@@ -281,11 +288,11 @@ const TAX = 0.20315;
 const COLORS = ['#28466B','#1E6E52','#8A6D2F','#6B4A6E','#3E7A85','#7A4A32','#4E5D3A','#5C5470'];
 
 const SAMPLE = [
-  {code:'7203', name:'トヨタ自動車', shares:100, cost:3200, price:3455, div:90},
-  {code:'8306', name:'三菱UFJ',     shares:200, cost:1750, price:2110, div:64},
-  {code:'9432', name:'NTT',        shares:1000, cost:155,  price:149,  div:5.2},
-  {code:'4568', name:'第一三共',    shares:100, cost:5400, price:4980, div:60},
-  {code:'8058', name:'三菱商事',    shares:100, cost:2900, price:3125, div:110}
+  {code:'7203', name:'トヨタ自動車', shares:100, cost:3200, price:3455, div:90,  date:'2025-04-10'},
+  {code:'8306', name:'三菱UFJ',     shares:200, cost:1750, price:2110, div:64,  date:'2025-01-20'},
+  {code:'9432', name:'NTT',        shares:1000, cost:155,  price:149,  div:5.2, date:'2024-11-05'},
+  {code:'4568', name:'第一三共',    shares:100, cost:5400, price:4980, div:60,  date:'2025-08-01'},
+  {code:'8058', name:'三菱商事',    shares:100, cost:2900, price:3125, div:110, date:'2024-06-15'}
 ];
 
 const STORE_KEY = 'kabucho-holdings-v1';
@@ -306,9 +313,16 @@ const yen = n => (n<0?'△':'') + Math.round(Math.abs(n)).toLocaleString('ja-JP'
 const signYen = n => (n>0?'+':n<0?'△':'') + Math.round(Math.abs(n)).toLocaleString('ja-JP') + '円';
 const clsOf = n => n>0?'pos':n<0?'neg':'';
 
+function yearsHeld(h){
+  if(!h.date) return 0;
+  const d = new Date(h.date+'T00:00:00');
+  if(isNaN(d)) return 0;
+  return Math.max(0,(Date.now()-d.getTime())/31557600000);
+}
 function calc(h){
   const mv = h.shares*h.price, cost = h.shares*h.cost;
-  return {mv, cost, pl: mv-cost, divTotal: h.shares*(h.div||0)};
+  const divTotal = h.shares*(h.div||0);
+  return {mv, cost, pl: mv-cost, divTotal, cumDiv: divTotal*yearsHeld(h)};
 }
 
 function renderAll(){
@@ -355,19 +369,21 @@ function renderAlloc(){
 function renderTable(){
   const tb = document.getElementById('tbody');
   if(holdings.length===0){
-    tb.innerHTML = '<tr><td colspan="8" class="name-cell" style="color:var(--muted)">保有銘柄がありません。下のフォームから追加してください。</td></tr>';
+    tb.innerHTML = '<tr><td colspan="10" class="name-cell" style="color:var(--muted)">保有銘柄がありません。下のフォームから追加してください。</td></tr>';
     return;
   }
   tb.innerHTML = holdings.map((h,i)=>{
     const c = calc(h);
     return `<tr>
       <td class="name-cell"><span class="code">${h.code}</span><span class="nm">${h.name}</span></td>
+      <td><input type="date" data-i="${i}" data-f="date" value="${h.date||''}"></td>
       <td><input data-i="${i}" data-f="shares" value="${h.shares}" inputmode="numeric"></td>
       <td><input data-i="${i}" data-f="cost" value="${h.cost}" inputmode="decimal"></td>
       <td><input data-i="${i}" data-f="price" value="${h.price}" inputmode="decimal"></td>
       <td>${yen(c.mv)}</td>
       <td class="${clsOf(c.pl)}">${signYen(c.pl)}</td>
       <td>${yen(c.divTotal)}</td>
+      <td>${h.date?yen(c.cumDiv):'—'}</td>
       <td><button class="row-del" data-del="${i}" aria-label="${h.name}を削除">削除</button></td>
     </tr>`;
   }).join('');
@@ -423,8 +439,12 @@ function renderSim(){
 document.addEventListener('input', e=>{
   const t = e.target;
   if(t.dataset.f !== undefined && t.dataset.i !== undefined){
-    const val = parseFloat(String(t.value).replace(/[,，]/g,''));
-    if(!isNaN(val)) holdings[t.dataset.i][t.dataset.f] = val;
+    if(t.dataset.f === 'date'){
+      holdings[t.dataset.i].date = t.value;
+    } else {
+      const val = parseFloat(String(t.value).replace(/[,，]/g,''));
+      if(!isNaN(val)) holdings[t.dataset.i][t.dataset.f] = val;
+    }
     saveStore();
     renderSummary(); renderAlloc(); renderSim();
   }
@@ -451,12 +471,13 @@ document.getElementById('btnAdd').addEventListener('click', ()=>{
     shares:parseFloat(g('fShares').value)||0,
     cost:parseFloat(g('fCost').value)||0,
     price:parseFloat(g('fPrice').value)||0,
-    div:parseFloat(g('fDiv').value)||0
+    div:parseFloat(g('fDiv').value)||0,
+    date:g('fDate').value||''
   };
   if(!h.name || h.shares<=0){ alert('銘柄名と株数を入力してください'); return; }
   holdings.push(h);
   saveStore();
-  ['fCode','fName','fShares','fCost','fPrice','fDiv'].forEach(id=>g(id).value='');
+  ['fCode','fName','fShares','fCost','fPrice','fDiv','fDate'].forEach(id=>g(id).value='');
   renderAll();
 });
 document.getElementById('btnExport').addEventListener('click', ()=>{
@@ -483,6 +504,134 @@ document.getElementById('fileImport').addEventListener('change', e=>{
 document.getElementById('btnSample').addEventListener('click', ()=>{
   holdings = JSON.parse(JSON.stringify(SAMPLE)); sellSet.clear(); saveStore(); renderAll();
 });
+
+/* ===== AI features (Anthropic API / BYOK) ===== */
+const KEY_STORE = 'kabucho-apikey';
+const MODEL = 'claude-sonnet-4-6';
+function getKey(){ try{ return localStorage.getItem(KEY_STORE)||''; }catch(e){ return ''; } }
+function askKey(){
+  const k = prompt('Anthropic APIキーを入力してください(この端末内にのみ保存されます)。\nconsole.anthropic.com → API Keys で発行できます。', getKey());
+  if(k!==null){ try{ localStorage.setItem(KEY_STORE, k.trim()); }catch(e){} }
+  return getKey();
+}
+function setStatus(msg){ document.getElementById('status').textContent = msg; }
+
+async function callClaude(body){
+  let key = getKey();
+  if(!key) key = askKey();
+  if(!key) throw new Error('APIキーが設定されていません');
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{
+      'content-type':'application/json',
+      'x-api-key':key,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },
+    body: JSON.stringify(body)
+  });
+  if(!res.ok){
+    if(res.status===401) throw new Error('APIキーが無効です。「⚙ APIキー」から設定し直してください');
+    throw new Error('API通信エラー ('+res.status+')');
+  }
+  return res.json();
+}
+function extractJSON(data){
+  const text = data.content.filter(b=>b.type==='text').map(b=>b.text).join('\n');
+  const m = text.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
+  if(!m) throw new Error('読み取り結果を解析できませんでした');
+  return JSON.parse(m[0]);
+}
+function fileToJpegB64(file, maxSide){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const scale = Math.min(1, maxSide/Math.max(img.width, img.height));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.width*scale);
+      cv.height = Math.round(img.height*scale);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      resolve(cv.toDataURL('image/jpeg', 0.85).split(',')[1]);
+      URL.revokeObjectURL(img.src);
+    };
+    img.onerror = ()=>reject(new Error('画像を読み込めませんでした'));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+/* --- screenshot import --- */
+document.getElementById('btnShot').addEventListener('click', ()=>{
+  if(!getKey() && !askKey()) return;
+  document.getElementById('shotInput').click();
+});
+document.getElementById('shotInput').addEventListener('change', async e=>{
+  const f = e.target.files[0]; e.target.value='';
+  if(!f) return;
+  const btn = document.getElementById('btnShot');
+  btn.disabled = true; setStatus('スクショを読み取り中…(10〜20秒)');
+  try{
+    const b64 = await fileToJpegB64(f, 1568);
+    const data = await callClaude({
+      model: MODEL, max_tokens: 2000,
+      messages:[{role:'user', content:[
+        {type:'image', source:{type:'base64', media_type:'image/jpeg', data:b64}},
+        {type:'text', text:'この証券口座のスクリーンショットから保有銘柄を読み取ってください。JSON配列のみを出力すること。各要素の形式: {"code":"証券コード4桁","name":"銘柄名","shares":保有株数(数値),"cost":平均取得単価(数値),"price":現在値(数値)}。単位の「株」「円」やカンマは除去し数値化する。読み取れない値はnull。JSON以外の文字は一切出力しないこと。'}
+      ]}]
+    });
+    const items = extractJSON(data);
+    if(!Array.isArray(items) || items.length===0) throw new Error('銘柄を検出できませんでした');
+    let added=0, updated=0;
+    items.forEach(it=>{
+      if(!it || !it.name) return;
+      const ex = holdings.find(h=>h.code===String(it.code));
+      if(ex){
+        if(it.shares!=null) ex.shares=Number(it.shares);
+        if(it.cost!=null) ex.cost=Number(it.cost);
+        if(it.price!=null) ex.price=Number(it.price);
+        updated++;
+      } else {
+        holdings.push({
+          code:String(it.code||'—'), name:String(it.name),
+          shares:Number(it.shares)||0, cost:Number(it.cost)||0,
+          price:Number(it.price)||0, div:0, date:''
+        });
+        added++;
+      }
+    });
+    sellSet.clear(); saveStore(); renderAll();
+    setStatus('取込完了: 追加'+added+'件 / 更新'+updated+'件。購入日と配当を確認してください。');
+  }catch(err){ setStatus('⚠ '+err.message); }
+  btn.disabled = false;
+});
+
+/* --- dividend auto-fetch --- */
+document.getElementById('btnDivFetch').addEventListener('click', async ()=>{
+  if(holdings.length===0){ setStatus('銘柄がありません'); return; }
+  if(!getKey() && !askKey()) return;
+  const btn = document.getElementById('btnDivFetch');
+  btn.disabled = true; setStatus('最新の配当予想を検索中…(20〜40秒)');
+  try{
+    const list = holdings.map(h=>h.code+' '+h.name).join(' / ');
+    const data = await callClaude({
+      model: MODEL, max_tokens: 3000,
+      tools:[{type:'web_search_20250305', name:'web_search'}],
+      messages:[{role:'user', content:
+        '次の日本株それぞれについて、1株当たりの年間配当金(直近の会社予想、単位:円)をWeb検索で調べてください: '+list+
+        '\n最終回答は必ずJSONオブジェクトのみで、証券コードをキー、年間配当額(数値)を値としてください。例: {"7203": 90, "8306": 64}。不明な銘柄はnull。JSON以外の文字は最終回答に含めないこと。'
+      }]
+    });
+    const j = extractJSON(data);
+    let n=0;
+    holdings.forEach(h=>{
+      if(j[h.code]!=null && !isNaN(Number(j[h.code]))){ h.div = Number(j[h.code]); n++; }
+    });
+    saveStore(); renderAll();
+    setStatus('配当を更新しました('+n+'/'+holdings.length+'銘柄)。');
+  }catch(err){ setStatus('⚠ '+err.message); }
+  btn.disabled = false;
+});
+
+document.getElementById('btnKey').addEventListener('click', askKey);
 
 renderAll();
 

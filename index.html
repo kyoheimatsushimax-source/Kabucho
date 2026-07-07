@@ -183,6 +183,18 @@ td input[type=date]{width:136px;font-size:12px;text-align:left}
 .sim-verdict.good{border-left-color:var(--gain);background:var(--gain-soft)}
 .sim-verdict.warn{border-left-color:var(--loss);background:var(--loss-soft)}
 
+/* ===== modal ===== */
+.modal-bg{position:fixed;inset:0;background:rgba(27,29,27,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
+.modal{background:var(--card);border:1px solid var(--rule-strong);max-width:560px;width:100%;max-height:85vh;overflow:auto;padding:18px}
+.modal h3{font-family:var(--mincho);font-size:16px;margin-bottom:8px}
+.modal-note{font-size:12.5px;color:var(--muted);margin-bottom:10px;line-height:1.7}
+#pasteArea{width:100%;height:130px;font-family:var(--mono);font-size:12px;border:1px solid var(--rule-strong);padding:8px;background:var(--paper);border-radius:2px;resize:vertical}
+.modal-actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.preview-table{width:100%;font-size:12px;border-collapse:collapse;margin-top:8px}
+.preview-table td,.preview-table th{border-bottom:1px solid var(--rule);padding:5px 6px;text-align:right;font-family:var(--mono);white-space:nowrap}
+.preview-table td:first-child,.preview-table th:first-child{text-align:left;font-family:var(--gothic)}
+.preview-table th{font-size:10.5px;color:var(--muted);font-family:var(--gothic)}
+
 /* ===== footer ===== */
 footer{
   border-top:3px double var(--rule-strong);
@@ -215,7 +227,8 @@ footer{
       <div class="subline">日本株ポートフォリオの損益・配当・損益通算をブラウザだけで管理。データは端末の外に送信されません。</div>
     </div>
     <div class="head-actions">
-      <button class="primary" id="btnShot">📷 スクショ取込</button>
+      <button class="primary" id="btnPaste">📋 貼り付け/CSV取込</button>
+      <button id="btnShot">📷 スクショ取込</button>
       <button id="btnDivFetch">配当を自動取得</button>
       <button id="btnExport">書き出す</button>
       <button id="btnImport">読み込む</button>
@@ -274,6 +287,21 @@ footer{
     <div class="sim-verdict" id="simVerdict"></div>
   </div>
 </section>
+
+<div class="modal-bg" id="pasteModal" hidden>
+  <div class="modal">
+    <h3>貼り付け / CSV取込</h3>
+    <p class="modal-note">証券アプリ・サイトの保有証券一覧を範囲選択してコピーし、下に貼り付けてください。証券会社からダウンロードしたCSVファイルの選択でも取り込めます(APIキー不要・通信なし)。</p>
+    <textarea id="pasteArea" placeholder="ここに貼り付け…&#10;例: 7203 トヨタ自動車 100株 3,200円 3,455円"></textarea>
+    <div class="modal-actions">
+      <button id="btnCsvFile">CSVファイルを選ぶ</button>
+      <button class="primary" id="btnParse">読み取る</button>
+      <button class="ghost" id="btnPasteClose">閉じる</button>
+      <input type="file" id="csvInput" accept=".csv,.txt,text/csv,text/plain" style="display:none">
+    </div>
+    <div id="parsePreview"></div>
+  </div>
+</div>
 
 <footer>
   <p><b>株帳</b> はブラウザ内だけで動く帳簿です。入力データはこの端末内にのみ自動保存されます。「スクショ取込」「配当を自動取得」を使う場合のみ、対象の画像・銘柄コードがAnthropic APIに送信されます(APIキーはご自身のものを使用、端末内に保存)。機種変更やバックアップには「帳簿を書き出す」でJSONを保存してください。</p>
@@ -503,6 +531,136 @@ document.getElementById('fileImport').addEventListener('change', e=>{
 });
 document.getElementById('btnSample').addEventListener('click', ()=>{
   holdings = JSON.parse(JSON.stringify(SAMPLE)); sellSet.clear(); saveStore(); renderAll();
+});
+
+/* ===== paste / CSV import (offline, no API) ===== */
+function toNum(v){
+  const n = parseFloat(String(v).replace(/[,，円株口\s"']/g,''));
+  return isNaN(n) ? null : n;
+}
+function splitCSVLine(line, delim){
+  const out=[]; let cur=''; let q=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){ q=!q; continue; }
+    if(ch===delim && !q){ out.push(cur); cur=''; continue; }
+    cur+=ch;
+  }
+  out.push(cur);
+  return out.map(x=>x.trim());
+}
+function parseHoldingsText(text){
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length) return [];
+  const out = [];
+  // --- CSV/TSV with header row ---
+  const headIdx = lines.findIndex(l=>/(銘柄|コード)/.test(l) && /(数量|株数|保有)/.test(l));
+  if(headIdx >= 0){
+    const delim = (lines[headIdx].split('\t').length > lines[headIdx].split(',').length) ? '\t' : ',';
+    const heads = splitCSVLine(lines[headIdx], delim).map(h=>h.replace(/[\s]/g,''));
+    const find = (...keys)=>heads.findIndex(h=>keys.some(k=>h.includes(k)));
+    const ci = {
+      code: find('銘柄コード','証券コード','コード'),
+      name: heads.findIndex(h=>h.includes('銘柄') && !h.includes('コード')),
+      shares: find('数量','株数','保有数'),
+      cost: find('取得単価','平均取得','買付単価','取得価額単価','参考単価','取得平均'),
+      price: find('現在値','時価単価','株価','現在株価','基準価')
+    };
+    for(let i=headIdx+1; i<lines.length; i++){
+      const c = splitCSVLine(lines[i], delim);
+      if(c.length < 2) continue;
+      const codeRaw = ci.code>=0 ? String(c[ci.code]) : '';
+      const code = (codeRaw.match(/[0-9][0-9A-Z]{3}/)||[])[0] || null;
+      const name = ci.name>=0 ? c[ci.name] : '';
+      if(!code && !name) continue;
+      out.push({
+        code: code||'—', name: name||code,
+        shares: ci.shares>=0 ? toNum(c[ci.shares]) : null,
+        cost:   ci.cost>=0   ? toNum(c[ci.cost])   : null,
+        price:  ci.price>=0  ? toNum(c[ci.price])  : null
+      });
+    }
+    if(out.length) return out;
+  }
+  // --- free text: one holding per line containing a 4-char code ---
+  for(const l of lines){
+    const m = l.match(/(?:^|[^0-9A-Z])([0-9][0-9A-Z]{3})(?![0-9A-Z])/);
+    if(!m) continue;
+    const code = m[1];
+    const rest = l.replace(m[1],' ');
+    const nameM = rest.match(/[\u3040-\u30FF\u3400-\u9FFF\uFF21-\uFF5AA-Za-z][\u3040-\u30FF\u3400-\u9FFF\uFF21-\uFF5AA-Za-z0-9・ー&.\-]{1,}/);
+    const nums = (rest.replace(/[,，]/g,'').match(/\d+(?:\.\d+)?/g)||[]).map(Number);
+    out.push({
+      code, name: nameM ? nameM[0] : code,
+      shares: nums.length>0 ? nums[0] : null,
+      cost:   nums.length>1 ? nums[1] : null,
+      price:  nums.length>2 ? nums[2] : null
+    });
+  }
+  return out;
+}
+let parsedItems = [];
+function mergeItems(items){
+  let added=0, updated=0;
+  items.forEach(it=>{
+    if(!it || !it.name) return;
+    const ex = holdings.find(h=>h.code===String(it.code));
+    if(ex){
+      if(it.shares!=null) ex.shares=it.shares;
+      if(it.cost!=null) ex.cost=it.cost;
+      if(it.price!=null) ex.price=it.price;
+      updated++;
+    } else {
+      holdings.push({code:String(it.code||'—'), name:String(it.name),
+        shares:it.shares||0, cost:it.cost||0, price:it.price||0, div:0, date:''});
+      added++;
+    }
+  });
+  sellSet.clear(); saveStore(); renderAll();
+  return {added, updated};
+}
+function showPreview(items){
+  const pv = document.getElementById('parsePreview');
+  if(!items.length){
+    pv.innerHTML = '<p class="modal-note">銘柄を検出できませんでした。「コード 銘柄名 株数 取得単価 現在値」の並びが1行に含まれる形式か、ヘッダー付きCSVをお試しください。</p>';
+    return;
+  }
+  pv.innerHTML = '<table class="preview-table"><tr><th>銘柄</th><th>株数</th><th>取得単価</th><th>現在値</th></tr>' +
+    items.map(it=>'<tr><td>'+(it.code||'')+' '+(it.name||'')+'</td><td>'+(it.shares??'—')+'</td><td>'+(it.cost??'—')+'</td><td>'+(it.price??'—')+'</td></tr>').join('') +
+    '</table><div class="modal-actions"><button class="primary" id="btnDoImport">この'+items.length+'銘柄を取り込む</button></div>' +
+    '<p class="modal-note">「—」の項目は取込後に表で直接入力できます。既存銘柄はコード一致で株数・単価・現在値を更新します。</p>';
+  document.getElementById('btnDoImport').addEventListener('click', ()=>{
+    const r = mergeItems(parsedItems);
+    document.getElementById('pasteModal').hidden = true;
+    document.getElementById('pasteArea').value = '';
+    document.getElementById('parsePreview').innerHTML = '';
+    setStatus('取込完了: 追加'+r.added+'件 / 更新'+r.updated+'件。');
+  });
+}
+document.getElementById('btnPaste').addEventListener('click', ()=>{
+  document.getElementById('pasteModal').hidden = false;
+});
+document.getElementById('btnPasteClose').addEventListener('click', ()=>{
+  document.getElementById('pasteModal').hidden = true;
+});
+document.getElementById('pasteModal').addEventListener('click', e=>{
+  if(e.target.id==='pasteModal') e.target.hidden = true;
+});
+document.getElementById('btnParse').addEventListener('click', ()=>{
+  parsedItems = parseHoldingsText(document.getElementById('pasteArea').value);
+  showPreview(parsedItems);
+});
+document.getElementById('btnCsvFile').addEventListener('click', ()=>document.getElementById('csvInput').click());
+document.getElementById('csvInput').addEventListener('change', e=>{
+  const f = e.target.files[0]; e.target.value='';
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{
+    document.getElementById('pasteArea').value = r.result;
+    parsedItems = parseHoldingsText(r.result);
+    showPreview(parsedItems);
+  };
+  r.readAsText(f);
 });
 
 /* ===== AI features (Anthropic API / BYOK) ===== */

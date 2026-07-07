@@ -1,4 +1,4 @@
-const CACHE = 'kabucho-v2';
+const CACHE = 'kabucho-v3';
 const ASSETS = [
   './',
   './index.html',

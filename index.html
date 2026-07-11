@@ -253,6 +253,9 @@ td input[type=date]{width:136px;font-size:12px;text-align:left}
 .row-act:hover{color:var(--indigo);background:none}
 .sales-note{font-size:12.5px;color:var(--muted);margin-top:8px}
 .sales-note b{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.year-tabs{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.year-tabs button{font-size:12px;padding:4px 12px;border-color:var(--rule-strong);color:var(--muted)}
+.year-tabs button.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 .sell-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
 .sell-grid label{font-size:11.5px;color:var(--muted);display:block;margin-bottom:4px;letter-spacing:.06em}
 .sell-grid input{width:100%;font-family:var(--mono);font-size:13.5px;padding:7px 8px;border:1px solid var(--rule-strong);border-radius:2px;background:#fff}
@@ -376,6 +379,7 @@ footer{
 
 <section>
   <h2>売却履歴 <span class="en">REALIZED P&amp;L</span></h2>
+  <div class="year-tabs" id="salesYears"></div>
   <div class="table-card">
     <table style="min-width:760px">
       <thead>
@@ -399,6 +403,7 @@ footer{
 
 <section>
   <h2>配当受取履歴 <span class="en">DIVIDENDS RECEIVED</span></h2>
+  <div class="year-tabs" id="divsYears"></div>
   <div class="table-card">
     <table style="min-width:700px">
       <thead>
@@ -413,11 +418,12 @@ footer{
 <section>
   <h2>損益通算シミュレーター <span class="en">TAX-LOSS HARVESTING</span></h2>
   <div class="sim-card">
-    <p class="sim-intro">売却したい銘柄にチェックを入れると、今年すでに確定した損益と通算した場合の税額への影響を試算します(税率 20.315%・特定口座内の概算)。</p>
+    <p class="sim-intro">売却したい銘柄にチェックを入れると、今年すでに確定した譲渡損益・受取配当と通算した場合の税額への影響を試算します。譲渡損失が出た場合は今年の受取配当と通算され、配当の源泉税が還付対象になります(税率 20.315%・源泉徴収ありの特定口座内の概算)。</p>
     <div class="sim-realized">
       <label for="realizedInput">今年の確定済み損益(帳簿外の分)</label>
       <input id="realizedInput" inputmode="numeric" value="0"> 円
       <span id="simFromSales" style="font-size:12px;color:var(--muted)"></span>
+      <span id="simDivInfo" style="font-size:12px;color:var(--muted)"></span>
     </div>
     <div class="sim-list" id="simList"></div>
     <div class="sim-result" id="simResult"></div>
@@ -721,14 +727,40 @@ function renderCalEdit(){
   ).join('') || '<div style="padding:8px 0;color:var(--muted)">銘柄を追加すると設定できます</div>';
 }
 
-/* ===== sales history ===== */
+/* ===== sales / dividends history (年別表示) ===== */
+let salesYear = String(new Date().getFullYear());
+let divsYear = String(new Date().getFullYear());
+const recYear = r => String(r.date||'').slice(0,4);
+function yearsOf(arr){
+  return [...new Set(arr.map(recYear).filter(y=>/^\d{4}$/.test(y)))].sort().reverse();
+}
+function renderYearTabs(el, arr, selected, attr){
+  const nowY = String(new Date().getFullYear());
+  if(!arr.length){ el.innerHTML=''; return; }
+  const years = yearsOf(arr);
+  const ordered = [nowY, ...years.filter(y=>y!==nowY)];
+  el.innerHTML = ordered.map(y=>
+    `<button class="${selected===y?'on':''}" data-${attr}="${y}">${y}年</button>`
+  ).join('') + `<button class="${selected==='all'?'on':''}" data-${attr}="all">全期間</button>`;
+}
+
 function renderSales(){
   const tb = document.getElementById('salesBody');
+  const note = document.getElementById('salesNote');
+  const nowY = String(new Date().getFullYear());
+  renderYearTabs(document.getElementById('salesYears'), sales, salesYear, 'syear');
   if(!sales.length){
-    tb.innerHTML = '<tr><td colspan="7" class="name-cell" style="color:var(--muted)">売却履歴はまだありません。保有銘柄の「売却」ボタン、または下のフォームから過去分を手入力で記録できます。</td></tr>';
+    tb.innerHTML = '<tr><td colspan="7" class="name-cell" style="color:var(--muted)">売却履歴はまだありません。保有銘柄の「売却」ボタン、下のフォーム、または「📋 貼り付け/CSV取込」の損益明細CSVから記録できます。</td></tr>';
+    note.textContent = '';
+    return;
+  }
+  const view = sales.map((s,i)=>({s,i}))
+    .filter(x=> salesYear==='all' || recYear(x.s)===salesYear)
+    .sort((a,b)=>String(b.s.date||'').localeCompare(String(a.s.date||'')));
+  if(!view.length){
+    tb.innerHTML = '<tr><td colspan="7" class="name-cell" style="color:var(--muted)">'+salesYear+'年の売却履歴はありません。</td></tr>';
   } else {
-    const sorted = sales.map((s,i)=>({s,i})).sort((a,b)=>String(b.s.date||'').localeCompare(String(a.s.date||'')));
-    tb.innerHTML = sorted.map(({s,i})=>{
+    tb.innerHTML = view.map(({s,i})=>{
       const pl = salePL(s);
       return `<tr>
         <td style="text-align:left;font-size:12.5px">${s.date||'—'}</td>
@@ -741,25 +773,37 @@ function renderSales(){
       </tr>`;
     }).join('');
   }
-  const note = document.getElementById('salesNote');
-  if(sales.length){
-    const y = new Date().getFullYear();
-    const yTotal = salesRealizedThisYear();
-    const allTotal = sales.reduce((t,s)=>t+salePL(s),0);
-    note.innerHTML = y+'年の実現損益 <b class="'+clsOf(yTotal)+'">'+signYen(yTotal)+'</b>(全期間 '+signYen(allTotal)+')— 今年の分は損益通算シミュレーターに自動で加算されます。';
+  if(salesYear==='all'){
+    const per = yearsOf(sales).map(y=>{
+      const t = sales.filter(s=>recYear(s)===y).reduce((a,s)=>a+salePL(s),0);
+      return y+'年 <b class="'+clsOf(t)+'">'+signYen(t)+'</b>';
+    }).join(' / ');
+    const total = sales.reduce((t,s)=>t+salePL(s),0);
+    note.innerHTML = '年別実現損益: '+per+'(累計 <b class="'+clsOf(total)+'">'+signYen(total)+'</b>)';
   } else {
-    note.textContent = '';
+    const t = sales.filter(s=>recYear(s)===salesYear).reduce((a,s)=>a+salePL(s),0);
+    note.innerHTML = salesYear+'年の実現損益 <b class="'+clsOf(t)+'">'+signYen(t)+'</b>'
+      + (salesYear===nowY ? ' — 損益通算シミュレーターに自動で加算されます。' : '');
   }
 }
 
 /* ===== dividends received ===== */
 function renderDivs(){
   const tb = document.getElementById('divsBody');
+  const note = document.getElementById('divsNote');
+  renderYearTabs(document.getElementById('divsYears'), divRecs, divsYear, 'dyear');
   if(!divRecs.length){
     tb.innerHTML = '<tr><td colspan="7" class="name-cell" style="color:var(--muted)">配当受取履歴はまだありません。「📋 貼り付け/CSV取込」から特定口座損益明細のCSVを取り込めます。</td></tr>';
+    note.textContent = '';
+    return;
+  }
+  const view = divRecs.map((d,i)=>({d,i}))
+    .filter(x=> divsYear==='all' || recYear(x.d)===divsYear)
+    .sort((a,b)=>String(b.d.date||'').localeCompare(String(a.d.date||'')));
+  if(!view.length){
+    tb.innerHTML = '<tr><td colspan="7" class="name-cell" style="color:var(--muted)">'+divsYear+'年の配当受取履歴はありません。</td></tr>';
   } else {
-    const sorted = divRecs.map((d,i)=>({d,i})).sort((a,b)=>String(b.d.date||'').localeCompare(String(a.d.date||'')));
-    tb.innerHTML = sorted.map(({d,i})=>{
+    tb.innerHTML = view.map(({d,i})=>{
       const tax = d.tax||0;
       return `<tr>
         <td style="text-align:left;font-size:12.5px">${d.date||'—'}</td>
@@ -772,15 +816,17 @@ function renderDivs(){
       </tr>`;
     }).join('');
   }
-  const note = document.getElementById('divsNote');
-  if(divRecs.length){
-    const y = String(new Date().getFullYear());
-    const yr = divRecs.filter(d=>d.date && d.date.slice(0,4)===y);
-    const yG = yr.reduce((t,d)=>t+d.amount,0), yN = yr.reduce((t,d)=>t+d.amount-(d.tax||0),0);
-    const allG = divRecs.reduce((t,d)=>t+d.amount,0);
-    note.innerHTML = y+'年の受取配当 <b class="pos">'+yen(yG)+'</b>(税引後 '+yen(yN)+')/ 全期間 '+yen(allG)+'(税引前)';
+  if(divsYear==='all'){
+    const per = yearsOf(divRecs).map(y=>{
+      const g = divRecs.filter(d=>recYear(d)===y).reduce((a,d)=>a+d.amount,0);
+      return y+'年 <b class="pos">'+yen(g)+'</b>';
+    }).join(' / ');
+    const total = divRecs.reduce((t,d)=>t+d.amount,0);
+    note.innerHTML = '年別受取配当(税引前): '+per+'(累計 <b class="pos">'+yen(total)+'</b>)';
   } else {
-    note.textContent = '';
+    const yr = divRecs.filter(d=>recYear(d)===divsYear);
+    const g = yr.reduce((t,d)=>t+d.amount,0), n = yr.reduce((t,d)=>t+d.amount-(d.tax||0),0);
+    note.innerHTML = divsYear+'年の受取配当 <b class="pos">'+yen(g)+'</b>(税引後 '+yen(n)+')';
   }
 }
 
@@ -799,7 +845,8 @@ function parsePnlCsv(text){
     const c = splitCSVLine(lines[i], ',');
     const first = (c[0]||'').trim();
     if(first==='配当所得税徴収額'){
-      if(lastDiv) lastDiv.tax = (num(c[11])||0)+(num(c[12])||0);
+      // 徴収額列(c[11])が所得税+住民税の合計。最終列(c[12])は「うち地方税」の内訳なので加算しない
+      if(lastDiv) lastDiv.tax = num(c[11])||0;
       lastDiv = null; continue;
     }
     if(first==='譲渡益税徴収額'){ lastDiv = null; continue; }
@@ -834,7 +881,7 @@ function importPnl(p){
   });
   p.divs.forEach(x=>{
     const dup = divRecs.find(d=>d.code===x.code && d.name===x.name && d.date===x.date && d.amount===x.amount);
-    if(dup){ dSkip++; return; }
+    if(dup){ dup.tax = x.tax; dSkip++; return; } // 重複はスキップしつつ税額は最新値に更新
     divRecs.push(x); dAdd++;
   });
   saveSales(); saveDivs();
@@ -896,6 +943,7 @@ document.getElementById('btnSellConfirm').addEventListener('click', ()=>{
   if(sh>h.shares){ alert('保有株数('+h.shares+'株)を超えています'); return; }
   if(isNaN(pr)||pr<=0){ alert('売却単価を入力してください'); return; }
   sales.push({code:h.code, name:h.name, date:dt||'', shares:sh, cost:h.cost, sellPrice:pr});
+  if(/^\d{4}/.test(dt)) salesYear = dt.slice(0,4); // 記録した年を表示
   h.shares -= sh;
   if(h.shares<=0) holdings.splice(sellIdx,1);
   sellIdx = null; sellSet.clear();
@@ -925,6 +973,7 @@ document.getElementById('btnSaleAdd').addEventListener('click', ()=>{
   if(isNaN(cost)){ alert('取得単価を入力してください'); return; }
   if(isNaN(price)||price<=0){ alert('売却単価を入力してください'); return; }
   sales.push({code:code||'—', name, date:g('sfDate').value||'', shares, cost, sellPrice:price});
+  if(/^\d{4}/.test(g('sfDate').value)) salesYear = g('sfDate').value.slice(0,4); // 記録した年を表示
   saveSales();
   ['sfDate','sfCode','sfName','sfShares','sfCost','sfPrice'].forEach(id=>g(id).value='');
   renderSales(); renderSim();
@@ -974,34 +1023,53 @@ function renderSim(){
   const realized = manual + fromSales;
   document.getElementById('simFromSales').textContent =
     fromSales!==0 ? '+ 売却履歴より '+signYen(fromSales)+'(自動加算)' : '';
+  // 今年の受取配当(税引前)と源泉徴収税額 — 譲渡損失との通算で還付対象になる
+  const y = String(new Date().getFullYear());
+  const dvYear = divRecs.filter(d=>d.date && d.date.slice(0,4)===y);
+  const dvGross = dvYear.reduce((t,d)=>t+d.amount,0);
+  const dvTax = dvYear.reduce((t,d)=>t+(d.tax||0),0);
+  document.getElementById('simDivInfo').textContent =
+    dvGross>0 ? '+ 受取配当 '+yen(dvGross)+'(源泉税 '+yen(dvTax)+')も通算対象' : '';
   let harvest = 0;
   sellSet.forEach(i=>{ if(holdings[i]) harvest += calc(holdings[i]).pl; });
   const after = realized + harvest;
-  const taxBefore = Math.max(realized,0)*TAX;
-  const taxAfter = Math.max(after,0)*TAX;
+  // 譲渡損失は配当と通算され、配当の源泉税が按分還付される(還付は徴収済み額が上限)
+  const refundAt = G => G<0 ? Math.min(Math.min(-G, dvGross)*TAX, dvTax) : 0;
+  const yearTax = G => Math.max(G,0)*TAX + dvTax - refundAt(G);
+  const taxBefore = yearTax(realized);
+  const taxAfter = yearTax(after);
   const diff = taxAfter - taxBefore;
+  const dRef = refundAt(after) - refundAt(realized); // 配当源泉税の還付増分
+  const remLoss = Math.max(-after - dvGross, 0);     // 配当と通算しても残る損失
 
   document.getElementById('simResult').innerHTML = `
     <div class="sim-res-cell"><div class="sim-res-label">売却で実現する損益</div>
       <div class="sim-res-value ${clsOf(harvest)}">${signYen(harvest)}</div></div>
-    <div class="sim-res-cell"><div class="sim-res-label">通算後の年間損益</div>
+    <div class="sim-res-cell"><div class="sim-res-label">通算後の年間譲渡損益</div>
       <div class="sim-res-value ${clsOf(after)}">${signYen(after)}</div></div>
-    <div class="sim-res-cell"><div class="sim-res-label">税額の増減</div>
-      <div class="sim-res-value ${clsOf(-diff)}">${diff===0?'±0円':signYen(diff)}</div></div>`;
+    <div class="sim-res-cell"><div class="sim-res-label">税額の増減(配当還付含む)</div>
+      <div class="sim-res-value ${clsOf(-diff)}">${Math.abs(diff)<0.5?'±0円':signYen(diff)}</div></div>`;
 
   const v = document.getElementById('simVerdict');
   if(sellSet.size===0){
     v.className='sim-verdict';
-    v.textContent='銘柄を選択すると試算結果がここに表示されます。';
-  } else if(diff<0){
+    v.textContent='銘柄を選択すると試算結果がここに表示されます。'
+      +(dvGross>0?' 譲渡損失が出た場合、今年の受取配当'+yen(dvGross)+'とも通算され源泉税(最大'+yen(dvTax)+')が還付対象になります。':'');
+  } else if(diff<-0.5){
     v.className='sim-verdict good';
-    v.textContent=`損益通算により税負担が約${yen(-diff)}軽くなります(源泉徴収済みの場合は還付見込み)。受渡日が年内に収まるかをご確認ください。`;
+    let t = '損益通算により税負担が約'+yen(-diff)+'軽くなります';
+    if(dRef>0.5) t += '(うち配当源泉税の還付見込み 約'+yen(dRef)+')';
+    t += '。源泉徴収ありの特定口座では年末に自動で通算・還付されます。受渡日が年内に収まるかをご確認ください。';
+    if(remLoss>0.5) t += ' 配当と通算してもなお損失が'+yen(remLoss)+'残るため、確定申告により最大3年間の繰越控除が可能です。';
+    v.textContent = t;
   } else if(after<0){
     v.className='sim-verdict';
-    v.textContent=`通算後も損失が${yen(-after)}残ります。確定申告により最大3年間の繰越控除が可能です。`;
-  } else if(diff>0){
+    v.textContent = remLoss>0.5
+      ? '受取配当'+yen(Math.min(-after,dvGross))+'と通算してもなお損失が'+yen(remLoss)+'残ります。確定申告により最大3年間の繰越控除が可能です。'
+      : '譲渡損失'+yen(-after)+'は受取配当と全額通算されます。';
+  } else if(diff>0.5){
     v.className='sim-verdict warn';
-    v.textContent=`利益確定により税額が約${yen(diff)}増える見込みです。`;
+    v.textContent='利益確定により税額が約'+yen(diff)+'増える見込みです。';
   } else {
     v.className='sim-verdict';
     v.textContent='税額への影響はありません。';
@@ -1083,6 +1151,12 @@ document.addEventListener('click', e=>{
   if(e.target.dataset.divdel !== undefined){
     divRecs.splice(Number(e.target.dataset.divdel),1);
     saveDivs(); renderDivs();
+  }
+  if(e.target.dataset.syear !== undefined){
+    salesYear = e.target.dataset.syear; renderSales();
+  }
+  if(e.target.dataset.dyear !== undefined){
+    divsYear = e.target.dataset.dyear; renderDivs();
   }
 });
 ['sellShares','sellPrice'].forEach(id=>{

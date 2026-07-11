@@ -379,7 +379,7 @@ footer{
   <div class="table-card">
     <table style="min-width:760px">
       <thead>
-        <tr><th>売却日</th><th>銘柄</th><th>株数</th><th>取得単価</th><th>売却単価</th><th>実現損益</th><th></th></tr>
+        <tr><th>売却日</th><th>銘柄</th><th>数量</th><th>取得単価</th><th>売却単価</th><th>実現損益</th><th></th></tr>
       </thead>
       <tbody id="salesBody"></tbody>
     </table>
@@ -395,6 +395,19 @@ footer{
   </div>
   <p class="sales-note">手入力で追加した売却は履歴と損益計算にのみ反映され、保有株数は変更されません。</p>
   <p class="sales-note" id="salesNote"></p>
+</section>
+
+<section>
+  <h2>配当受取履歴 <span class="en">DIVIDENDS RECEIVED</span></h2>
+  <div class="table-card">
+    <table style="min-width:700px">
+      <thead>
+        <tr><th>受渡日</th><th>銘柄</th><th>数量</th><th>受取額(税引前)</th><th>税額</th><th>税引後</th><th></th></tr>
+      </thead>
+      <tbody id="divsBody"></tbody>
+    </table>
+  </div>
+  <p class="sales-note" id="divsNote"></p>
 </section>
 
 <section>
@@ -415,7 +428,7 @@ footer{
 <div class="modal-bg" id="pasteModal" hidden>
   <div class="modal">
     <h3>貼り付け / CSV取込</h3>
-    <p class="modal-note">証券アプリ・サイトの保有証券一覧を範囲選択してコピーし、下に貼り付けてください。証券会社からダウンロードしたCSVファイルの選択でも取り込めます(APIキー不要・通信なし)。</p>
+    <p class="modal-note">証券アプリ・サイトの保有証券一覧を範囲選択してコピーし、下に貼り付けてください。証券会社からダウンロードしたCSVファイルの選択でも取り込めます(APIキー不要・通信なし)。<b>特定口座損益明細のCSV</b>を選ぶと、過去の売却損益と受取配当を履歴として取り込みます。</p>
     <textarea id="pasteArea" placeholder="ここに貼り付け…&#10;例: 7203 トヨタ自動車 100株 3,200円 3,455円"></textarea>
     <div class="modal-actions">
       <button id="btnCsvFile">CSVファイルを選ぶ</button>
@@ -510,6 +523,19 @@ function salesRealizedThisYear(){
   return sales.filter(s=>s.date && s.date.slice(0,4)===y).reduce((t,s)=>t+salePL(s),0);
 }
 
+const DIVS_KEY = 'kabucho-divrecs-v1';
+function loadDivs(){
+  try{
+    const raw = localStorage.getItem(DIVS_KEY);
+    if(raw){ const d = JSON.parse(raw); if(Array.isArray(d)) return d; }
+  }catch(e){}
+  return [];
+}
+function saveDivs(){
+  try{ localStorage.setItem(DIVS_KEY, JSON.stringify(divRecs)); }catch(e){}
+}
+let divRecs = loadDivs();
+
 const yen = n => (n<0?'△':'') + Math.round(Math.abs(n)).toLocaleString('ja-JP') + '円';
 const signYen = n => (n>0?'+':n<0?'△':'') + Math.round(Math.abs(n)).toLocaleString('ja-JP') + '円';
 const clsOf = n => n>0?'pos':n<0?'neg':'';
@@ -528,7 +554,7 @@ function calc(h){
 
 function renderAll(){
   renderSummary(); renderAlloc(); renderTable();
-  renderCalendar(); renderCalEdit(); renderSales(); renderSim();
+  renderCalendar(); renderCalEdit(); renderSales(); renderDivs(); renderSim();
 }
 
 function renderSummary(){
@@ -724,6 +750,118 @@ function renderSales(){
   } else {
     note.textContent = '';
   }
+}
+
+/* ===== dividends received ===== */
+function renderDivs(){
+  const tb = document.getElementById('divsBody');
+  if(!divRecs.length){
+    tb.innerHTML = '<tr><td colspan="7" class="name-cell" style="color:var(--muted)">配当受取履歴はまだありません。「📋 貼り付け/CSV取込」から特定口座損益明細のCSVを取り込めます。</td></tr>';
+  } else {
+    const sorted = divRecs.map((d,i)=>({d,i})).sort((a,b)=>String(b.d.date||'').localeCompare(String(a.d.date||'')));
+    tb.innerHTML = sorted.map(({d,i})=>{
+      const tax = d.tax||0;
+      return `<tr>
+        <td style="text-align:left;font-size:12.5px">${d.date||'—'}</td>
+        <td class="name-cell"><span class="code">${d.code||''}</span><span class="nm">${d.name}</span></td>
+        <td>${d.qty||'—'}</td>
+        <td class="pos">${yen(d.amount)}</td>
+        <td>${tax?yen(tax):'—'}</td>
+        <td>${yen(d.amount-tax)}</td>
+        <td><button class="row-del" data-divdel="${i}" aria-label="この配当記録を削除">削除</button></td>
+      </tr>`;
+    }).join('');
+  }
+  const note = document.getElementById('divsNote');
+  if(divRecs.length){
+    const y = String(new Date().getFullYear());
+    const yr = divRecs.filter(d=>d.date && d.date.slice(0,4)===y);
+    const yG = yr.reduce((t,d)=>t+d.amount,0), yN = yr.reduce((t,d)=>t+d.amount-(d.tax||0),0);
+    const allG = divRecs.reduce((t,d)=>t+d.amount,0);
+    note.innerHTML = y+'年の受取配当 <b class="pos">'+yen(yG)+'</b>(税引後 '+yen(yN)+')/ 全期間 '+yen(allG)+'(税引前)';
+  } else {
+    note.textContent = '';
+  }
+}
+
+/* ===== 特定口座損益明細CSVの取込 ===== */
+function parsePnlCsv(text){
+  if(!/損益明細|譲渡益取消区分/.test(text)) return null;
+  const lines = text.split(/\r?\n/);
+  const headIdx = lines.findIndex(l=>l.includes('銘柄コード') && l.includes('取引') && l.includes('損益金額'));
+  if(headIdx<0) return null;
+  const num = v=>{ const n=parseFloat(String(v).replace(/[,，+株口\s"]/g,'')); return isNaN(n)?null:n; };
+  const dt = v=>{ const m=String(v).match(/(\d{4})[\/年](\d{1,2})[\/月](\d{1,2})/); return m ? m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0') : ''; };
+  const out = {sales:[], divs:[]};
+  let lastDiv = null; // 直後の「配当所得税徴収額」行を紐付ける
+  for(let i=headIdx+1; i<lines.length; i++){
+    if(!lines[i].trim()) continue;
+    const c = splitCSVLine(lines[i], ',');
+    const first = (c[0]||'').trim();
+    if(first==='配当所得税徴収額'){
+      if(lastDiv) lastDiv.tax = (num(c[11])||0)+(num(c[12])||0);
+      lastDiv = null; continue;
+    }
+    if(first==='譲渡益税徴収額'){ lastDiv = null; continue; }
+    if(c.length<12){ lastDiv = null; continue; }
+    const tr = c[5]||'';
+    const name = (c[1]||'').trim();
+    if(!name){ lastDiv = null; continue; }
+    const code = first.replace(/\s+/g,'') || '—';
+    if(/配当|分配金/.test(tr)){
+      const amt = num(c[11]);
+      if(amt==null){ lastDiv = null; continue; }
+      const d = {code, name, date:dt(c[6])||dt(c[3]), qty:(c[4]||'').replace(/"/g,'').trim(), amount:amt, tax:0};
+      out.divs.push(d); lastDiv = d;
+    } else if(/売|解約|償還/.test(tr)){
+      lastDiv = null;
+      const sh = num(c[4]), sellT = num(c[7]), costT = num(c[10]);
+      if(!sh || sh<=0 || sellT==null || costT==null) continue;
+      out.sales.push({code, name, date:dt(c[6])||dt(c[3]), shares:sh, cost:costT/sh, sellPrice:sellT/sh, acq:dt(c[9])});
+    } else {
+      lastDiv = null;
+    }
+  }
+  return (out.sales.length || out.divs.length) ? out : null;
+}
+function importPnl(p){
+  let sAdd=0, sSkip=0, dAdd=0, dSkip=0;
+  p.sales.forEach(x=>{
+    const dup = sales.find(s=>s.code===x.code && s.date===x.date && s.shares===x.shares &&
+      Math.abs(s.sellPrice-x.sellPrice)<0.01 && Math.abs(s.cost-x.cost)<0.01 && (s.acq||'')===(x.acq||''));
+    if(dup){ sSkip++; return; }
+    sales.push(x); sAdd++;
+  });
+  p.divs.forEach(x=>{
+    const dup = divRecs.find(d=>d.code===x.code && d.name===x.name && d.date===x.date && d.amount===x.amount);
+    if(dup){ dSkip++; return; }
+    divRecs.push(x); dAdd++;
+  });
+  saveSales(); saveDivs();
+  return {sAdd, sSkip, dAdd, dSkip};
+}
+function showPnlPreview(p){
+  const pv = document.getElementById('parsePreview');
+  const plSum = p.sales.reduce((t,s)=>t+salePL(s),0);
+  const dvSum = p.divs.reduce((t,d)=>t+d.amount,0);
+  const salesRows = p.sales.slice(0,6).map(s=>
+    '<tr><td>'+s.date+' '+s.name+'</td><td>'+s.shares+'</td><td class="'+clsOf(salePL(s))+'">'+signYen(salePL(s))+'</td></tr>').join('');
+  const divRows = p.divs.slice(0,6).map(d=>
+    '<tr><td>'+d.date+' '+d.name+'</td><td>'+(d.qty||'—')+'</td><td>'+yen(d.amount)+'</td></tr>').join('');
+  pv.innerHTML =
+    '<p class="modal-note"><b>特定口座損益明細</b>を検出しました — 売却 '+p.sales.length+'件(損益合計 '+signYen(plSum)+')/ 配当 '+p.divs.length+'件(税引前合計 '+yen(dvSum)+')</p>'+
+    (p.sales.length ? '<table class="preview-table"><tr><th>売却</th><th>株数</th><th>損益</th></tr>'+salesRows+(p.sales.length>6?'<tr><td colspan="3">…他'+(p.sales.length-6)+'件</td></tr>':'')+'</table>' : '')+
+    (p.divs.length ? '<table class="preview-table" style="margin-top:6px"><tr><th>配当</th><th>数量</th><th>受取額</th></tr>'+divRows+(p.divs.length>6?'<tr><td colspan="3">…他'+(p.divs.length-6)+'件</td></tr>':'')+'</table>' : '')+
+    '<div class="modal-actions"><button class="primary" id="btnDoPnlImport">売却履歴と配当受取履歴に取り込む</button></div>'+
+    '<p class="modal-note">保有株数は変更されません。取込済みの明細は重複しないようスキップされます。</p>';
+  document.getElementById('btnDoPnlImport').addEventListener('click', ()=>{
+    const r = importPnl(p);
+    document.getElementById('pasteModal').hidden = true;
+    document.getElementById('pasteArea').value = '';
+    document.getElementById('parsePreview').innerHTML = '';
+    renderSales(); renderDivs(); renderSim();
+    setStatus('損益明細を取込: 売却 追加'+r.sAdd+'件/重複スキップ'+r.sSkip+'件、配当 追加'+r.dAdd+'件/重複スキップ'+r.dSkip+'件。');
+  });
 }
 
 /* ===== sell modal ===== */
@@ -942,6 +1080,10 @@ document.addEventListener('click', e=>{
     sales.splice(Number(e.target.dataset.saledel),1);
     saveSales(); renderSales(); renderSim();
   }
+  if(e.target.dataset.divdel !== undefined){
+    divRecs.splice(Number(e.target.dataset.divdel),1);
+    saveDivs(); renderDivs();
+  }
 });
 ['sellShares','sellPrice'].forEach(id=>{
   document.getElementById(id).addEventListener('input', updateSellPL);
@@ -964,7 +1106,7 @@ document.getElementById('btnAdd').addEventListener('click', ()=>{
   renderAll();
 });
 document.getElementById('btnExport').addEventListener('click', ()=>{
-  const blob = new Blob([JSON.stringify({app:'kabucho',version:2,holdings,sales},null,2)],{type:'application/json'});
+  const blob = new Blob([JSON.stringify({app:'kabucho',version:2,holdings,sales,divRecs},null,2)],{type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'kabucho.json';
@@ -980,7 +1122,8 @@ document.getElementById('fileImport').addEventListener('change', e=>{
       if(Array.isArray(d.holdings)){
         holdings = normalizeHoldings(d.holdings);
         if(Array.isArray(d.sales)) sales = d.sales;
-        sellSet.clear(); saveStore(); saveSales(); renderAll();
+        if(Array.isArray(d.divRecs)) divRecs = d.divRecs;
+        sellSet.clear(); saveStore(); saveSales(); saveDivs(); renderAll();
       }
       else alert('株帳のJSONファイルではありません');
     }catch{ alert('ファイルを読み込めませんでした'); }
@@ -1106,20 +1249,29 @@ document.getElementById('pasteModal').addEventListener('click', e=>{
   if(e.target.id==='pasteModal') e.target.hidden = true;
 });
 document.getElementById('btnParse').addEventListener('click', ()=>{
-  parsedItems = parseHoldingsText(document.getElementById('pasteArea').value);
+  const text = document.getElementById('pasteArea').value;
+  const pnl = parsePnlCsv(text);
+  if(pnl){ showPnlPreview(pnl); return; }
+  parsedItems = parseHoldingsText(text);
   showPreview(parsedItems);
 });
 document.getElementById('btnCsvFile').addEventListener('click', ()=>document.getElementById('csvInput').click());
 document.getElementById('csvInput').addEventListener('change', e=>{
   const f = e.target.files[0]; e.target.value='';
   if(!f) return;
-  const r = new FileReader();
-  r.onload = ()=>{
-    document.getElementById('pasteArea').value = r.result;
-    parsedItems = parseHoldingsText(r.result);
+  // 証券会社のCSVはShift_JISが多いため、UTF-8で読めない場合は自動でShift_JISとして読む
+  f.arrayBuffer().then(buf=>{
+    let text;
+    try{ text = new TextDecoder('utf-8',{fatal:true}).decode(buf); }
+    catch(err){ text = new TextDecoder('shift_jis').decode(buf); }
+    document.getElementById('pasteArea').value = text;
+    const pnl = parsePnlCsv(text);
+    if(pnl){ showPnlPreview(pnl); return; }
+    parsedItems = parseHoldingsText(text);
     showPreview(parsedItems);
-  };
-  r.readAsText(f);
+  }).catch(()=>{
+    document.getElementById('parsePreview').innerHTML = '<p class="modal-note">ファイルを読み込めませんでした。</p>';
+  });
 });
 
 /* ===== AI features (Anthropic API / BYOK) ===== */

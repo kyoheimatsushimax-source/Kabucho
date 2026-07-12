@@ -1225,8 +1225,10 @@ function splitCSVLine(line, delim){
   out.push(cur);
   return out.map(x=>x.trim());
 }
+let fundsExcluded = false; // 直近のパースで投資信託セクションを除外したか
 function parseHoldingsText(text){
   const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  fundsExcluded = false;
   if(!lines.length) return [];
   const out = [];
   // --- CSV/TSV with header row ---
@@ -1243,10 +1245,14 @@ function parseHoldingsText(text){
       price: find('現在値','時価単価','株価','現在株価','基準価')
     };
     for(let i=headIdx+1; i<lines.length; i++){
+      // 投資信託セクション以降は取込対象外
+      if(/投資信託|ファンド名/.test(lines[i])){ fundsExcluded = true; break; }
       const c = splitCSVLine(lines[i], delim);
       if(c.length < 2) continue;
       const codeRaw = ci.code>=0 ? String(c[ci.code]) : '';
       const code = (codeRaw.match(/[0-9][0-9A-Z]{3}/)||[])[0] || null;
+      // コード列がある形式では、有効な銘柄コードのない行(合計行・区切り行など)を除外
+      if(ci.code>=0 && !code) continue;
       const name = ci.name>=0 ? c[ci.name] : '';
       if(!code && !name) continue;
       out.push({
@@ -1304,7 +1310,7 @@ function showPreview(items){
   pv.innerHTML = '<table class="preview-table"><tr><th>銘柄</th><th>株数</th><th>取得単価</th><th>現在値</th></tr>' +
     items.map(it=>'<tr><td>'+(it.code||'')+' '+(it.name||'')+'</td><td>'+(it.shares??'—')+'</td><td>'+(it.cost??'—')+'</td><td>'+(it.price??'—')+'</td></tr>').join('') +
     '</table><div class="modal-actions"><button class="primary" id="btnDoImport">この'+items.length+'銘柄を取り込む</button></div>' +
-    '<p class="modal-note">「—」の項目は取込後に表で直接入力できます。既存銘柄はコード一致で株数・単価・現在値を更新します。</p>';
+    '<p class="modal-note">「—」の項目は取込後に表で直接入力できます。既存銘柄はコード一致で株数・単価・現在値を更新します(購入日・配当設定は保持)。'+(fundsExcluded?'<b>投資信託は取込対象外のため除外しました。</b>':'')+'</p>';
   document.getElementById('btnDoImport').addEventListener('click', ()=>{
     const r = mergeItems(parsedItems);
     document.getElementById('pasteModal').hidden = true;

@@ -202,15 +202,32 @@ td input[type=date]{width:136px;font-size:12px;text-align:left}
 
 /* ===== dividend gantt ===== */
 .gantt{border:1px solid var(--rule);background:var(--card);overflow-x:auto}
-.gantt-inner{min-width:640px}
+.gantt-inner{min-width:700px}
 .gantt-head,.gantt-row{display:flex;align-items:stretch;border-bottom:1px solid var(--rule)}
 .gantt-row:last-child{border-bottom:none}
 .g-name{
-  flex:none;width:112px;padding:8px 10px;font-size:12.5px;
+  flex:none;width:104px;padding:8px 10px;font-size:12.5px;
   display:flex;align-items:center;border-right:1px solid var(--rule);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .gantt-head .g-name{font-size:10px;color:var(--muted);letter-spacing:.08em}
+.g-ctl{flex:none;width:76px;display:flex;align-items:center;gap:3px;padding:0 8px;border-right:1px solid var(--rule);font-size:11px;color:var(--muted);white-space:nowrap}
+.gantt-head .g-ctl{font-size:10px;letter-spacing:.08em}
+.g-sh{width:46px;font-family:var(--mono);font-size:12px;border:1px solid var(--rule);background:var(--paper);padding:2px 4px;text-align:right;border-radius:2px}
+.g-sold{color:var(--muted);font-size:11px}
+.g-bar.g-fc{opacity:.55}
+.g-bar.g-act{overflow:visible}
+.g-alabel{
+  position:absolute;top:50%;transform:translateY(-50%);
+  font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--ink);
+  white-space:nowrap;padding:0 3px;font-variant-numeric:tabular-nums;pointer-events:none;
+}
+.g-x{
+  position:absolute;right:1px;top:1px;border:none;
+  background:rgba(0,0,0,.22);color:#fff;font-size:10px;line-height:1;
+  width:14px;height:14px;padding:0;cursor:pointer;border-radius:2px;
+}
+.g-x:hover{background:var(--loss);color:#fff}
 .g-months{flex:1;display:grid;grid-template-columns:repeat(12,1fr)}
 .g-mlabel{
   font-family:var(--mono);font-size:10px;color:var(--muted);
@@ -337,8 +354,8 @@ footer{
     <table>
       <thead>
         <tr>
-          <th>銘柄</th><th>購入日</th><th>株数</th><th>取得単価</th><th>現在値</th>
-          <th>評価額</th><th>評価損益</th><th>1株配当(年)</th><th>取得来配当(概算)</th><th></th>
+          <th>銘柄</th><th>株数</th><th>取得単価</th><th>現在値</th>
+          <th>評価額</th><th>評価損益</th><th>1株配当(年)</th><th></th>
         </tr>
       </thead>
       <tbody id="tbody"></tbody>
@@ -351,7 +368,6 @@ footer{
     <input id="fCost" placeholder="取得単価" inputmode="decimal">
     <input id="fPrice" placeholder="現在値" inputmode="decimal">
     <input id="fDiv" placeholder="1株配当(空欄可)" inputmode="decimal">
-    <input id="fDate" type="date" aria-label="購入日">
     <button class="primary" id="btnAdd" style="grid-column:span 2">追加</button>
   </div>
 </section>
@@ -476,11 +492,11 @@ const TAX = 0.20315;
 const COLORS = ['#28466B','#1E6E52','#8A6D2F','#6B4A6E','#3E7A85','#7A4A32','#4E5D3A','#5C5470'];
 
 const SAMPLE = [
-  {code:'7203', name:'トヨタ自動車', shares:100, cost:3200, price:3455, div:90,  date:'2025-04-10', divIm:9, divIa:45,  divFm:3, divFa:45},
-  {code:'8306', name:'三菱UFJ',     shares:200, cost:1750, price:2110, div:64,  date:'2025-01-20', divIm:9, divIa:32,  divFm:3, divFa:32},
-  {code:'9432', name:'NTT',        shares:1000, cost:155,  price:149,  div:5.2, date:'2024-11-05', divIm:9, divIa:2.6, divFm:3, divFa:2.6},
-  {code:'4568', name:'第一三共',    shares:100, cost:5400, price:4980, div:60,  date:'2025-08-01', divIm:9, divIa:30,  divFm:3, divFa:30},
-  {code:'8058', name:'三菱商事',    shares:100, cost:2900, price:3125, div:110, date:'2024-06-15', divIm:9, divIa:55,  divFm:3, divFa:55}
+  {code:'7203', name:'トヨタ自動車', shares:100, cost:3200, price:3455, div:90,  divIm:9, divIa:45,  divFm:3, divFa:45},
+  {code:'8306', name:'三菱UFJ',     shares:200, cost:1750, price:2110, div:64,  divIm:9, divIa:32,  divFm:3, divFa:32},
+  {code:'9432', name:'NTT',        shares:1000, cost:155,  price:149,  div:5.2, divIm:9, divIa:2.6, divFm:3, divFa:2.6},
+  {code:'4568', name:'第一三共',    shares:100, cost:5400, price:4980, div:60,  divIm:9, divIa:30,  divFm:3, divFa:30},
+  {code:'8058', name:'三菱商事',    shares:100, cost:2900, price:3125, div:110, divIm:9, divIa:55,  divFm:3, divFa:55}
 ];
 
 const STORE_KEY = 'kabucho-holdings-v1';
@@ -495,6 +511,7 @@ function normalizeHoldings(arr){
       else { h.divFm=null; h.divFa=0; h.divIm=null; h.divIa=0; }
       delete h.divMonths;
     }
+    delete h.date;
   });
   return arr;
 }
@@ -546,16 +563,10 @@ const yen = n => (n<0?'△':'') + Math.round(Math.abs(n)).toLocaleString('ja-JP'
 const signYen = n => (n>0?'+':n<0?'△':'') + Math.round(Math.abs(n)).toLocaleString('ja-JP') + '円';
 const clsOf = n => n>0?'pos':n<0?'neg':'';
 
-function yearsHeld(h){
-  if(!h.date) return 0;
-  const d = new Date(h.date+'T00:00:00');
-  if(isNaN(d)) return 0;
-  return Math.max(0,(Date.now()-d.getTime())/31557600000);
-}
 function calc(h){
   const mv = h.shares*h.price, cost = h.shares*h.cost;
   const divTotal = h.shares*(h.div||0);
-  return {mv, cost, pl: mv-cost, divTotal, cumDiv: divTotal*yearsHeld(h)};
+  return {mv, cost, pl: mv-cost, divTotal};
 }
 
 function renderAll(){
@@ -603,21 +614,19 @@ function renderAlloc(){
 function renderTable(){
   const tb = document.getElementById('tbody');
   if(holdings.length===0){
-    tb.innerHTML = '<tr><td colspan="10" class="name-cell" style="color:var(--muted)">保有銘柄がありません。下のフォームから追加してください。</td></tr>';
+    tb.innerHTML = '<tr><td colspan="8" class="name-cell" style="color:var(--muted)">保有銘柄がありません。下のフォームから追加してください。</td></tr>';
     return;
   }
   tb.innerHTML = holdings.map((h,i)=>{
     const c = calc(h);
     return `<tr>
       <td class="name-cell"><span class="code">${h.code}</span><span class="nm">${h.name}</span></td>
-      <td><input type="date" data-i="${i}" data-f="date" value="${h.date||''}"></td>
       <td><input data-i="${i}" data-f="shares" value="${h.shares}" inputmode="numeric"></td>
       <td><input data-i="${i}" data-f="cost" value="${h.cost}" inputmode="decimal"></td>
       <td><input data-i="${i}" data-f="price" value="${h.price}" inputmode="decimal"></td>
       <td>${yen(c.mv)}</td>
       <td class="${clsOf(c.pl)}">${signYen(c.pl)}</td>
       <td><input data-i="${i}" data-f="div" value="${h.div||0}" inputmode="decimal" aria-label="${h.name}の1株配当"><div class="cell-sub">年 ${yen(c.divTotal)}</div></td>
-      <td>${h.date?yen(c.cumDiv):'—'}</td>
       <td><button class="row-act" data-sell="${i}" aria-label="${h.name}を売却">売却</button><button class="row-del" data-del="${i}" aria-label="${h.name}を削除">削除</button></td>
     </tr>`;
   }).join('');
@@ -683,32 +692,84 @@ function renderCalGridView(){
 function renderGantt(){
   const g = document.getElementById('calGantt');
   const nowM = new Date().getMonth()+1;
-  const rows = holdings
-    .filter(h=>h.shares>0 && payments(h).length)
-    .map((h,idx)=>{
-      const color = COLORS[idx%COLORS.length];
-      const bars = payments(h).map(p=>{
-        const amt = h.shares*p.amt;
-        // 権利確定月の月初から入金見込み月(+3ヶ月)の月末までの帯。年をまたぐ場合は分割
-        const start = p.m-1, span = 4, end = start+span;
-        const segs = end<=12
-          ? [[start, span, true, true]]
-          : [[start, 12-start, true, false],[0, end-12, false, true]];
-        return segs.map(([s,w,dot,label])=>
-          `<div class="g-bar" style="left:${(s/12*100).toFixed(3)}%;width:${(w/12*100).toFixed(3)}%;background:${color}">`+
-          (dot?'<span class="g-dot"></span>':'')+
-          (label?`<span class="g-amt">${p.label} ${yen(amt)}</span>`:'')+
-          `</div>`).join('');
-      }).join('');
-      const now = `<div class="g-now" style="left:${((nowM-1)/12*100).toFixed(3)}%;width:${(100/12).toFixed(3)}%"></div>`;
-      return `<div class="gantt-row"><span class="g-name" title="${h.name}">${h.name}</span><div class="g-track">${now}${bars}</div></div>`;
+  const year = String(new Date().getFullYear());
+  const keyOf = (code,name)=> (code && code!=='—') ? 'c:'+code : 'n:'+name;
+
+  // 今年の受取実績(配当受取履歴)を銘柄ごとにまとめる
+  const actByKey = {};
+  divRecs.forEach((d,ri)=>{
+    if(!d.date || d.date.slice(0,4)!==year) return;
+    const k = keyOf(d.code, d.name);
+    (actByKey[k] = actByKey[k]||[]).push({ri, name:d.name, m:parseInt(d.date.slice(5,7),10), amount:d.amount});
+  });
+
+  const rows = [];
+  const used = new Set();
+  holdings.forEach((h,hIdx)=>{
+    const k = keyOf(h.code,h.name);
+    const pays = payments(h);
+    const acts = actByKey[k]||[];
+    if(!pays.length && !acts.length) return;
+    used.add(k);
+    rows.push({h, hIdx, pays, acts});
+  });
+  // 売却済みなど保有にない銘柄の受取実績も行として表示
+  Object.keys(actByKey).forEach(k=>{
+    if(used.has(k)) return;
+    rows.push({h:null, hIdx:null, pays:[], acts:actByKey[k]});
+  });
+
+  if(!rows.length){
+    g.innerHTML = '<div class="gantt-empty">配当の予定(権利確定月の設定)または今年の受取実績がある銘柄がありません。「配当を自動取得」や損益明細CSVの取込で表示されます。</div>';
+    return;
+  }
+
+  const body = rows.map((r,idx)=>{
+    const color = COLORS[idx%COLORS.length];
+    const name = r.h ? r.h.name : r.acts[0].name;
+    // 実績バー(1ヶ月幅・実額)
+    const actBars = r.acts.map(a=>{
+      const lbl = a.m>=11
+        ? `<span class="g-alabel" style="right:${(((12-a.m)+1)/12*100).toFixed(3)}%">✓${yen(a.amount)}</span>`
+        : `<span class="g-alabel" style="left:${(a.m/12*100).toFixed(3)}%">✓${yen(a.amount)}</span>`;
+      return `<div class="g-bar g-act" style="left:${((a.m-1)/12*100).toFixed(3)}%;width:${(100/12).toFixed(3)}%;background:${color}"><button class="g-x" data-gactdel="${a.ri}" aria-label="この受取記録を削除">×</button></div>`+lbl;
     }).join('');
-  const head = `<div class="gantt-head"><span class="g-name">銘柄</span><div class="g-months">${
+    // 予定バー(実績と重なるものは非表示、権利確定後に売却した株数は受取見込みに加算)
+    const remaining = r.acts.slice();
+    const fcBars = r.pays.map(p=>{
+      const mm = ((p.m-1+3)%12)+1;
+      const hit = remaining.findIndex(a=>Math.abs(a.m-mm)<=2 || Math.abs(a.m-mm)>=10);
+      if(hit>=0){ remaining.splice(hit,1); return ''; } // 受取済みの予定は表示しない
+      let entitled = r.h.shares;
+      let adjusted = false;
+      if(p.m+3<=12){
+        const soldAfter = sales.filter(s=>keyOf(s.code,s.name)===keyOf(r.h.code,r.h.name)
+          && s.date && s.date.slice(0,4)===year && parseInt(s.date.slice(5,7),10)>p.m)
+          .reduce((t,s)=>t+s.shares,0);
+        if(soldAfter>0){ entitled += soldAfter; adjusted = true; }
+      }
+      const amt = entitled*p.amt;
+      if(amt<=0) return '';
+      const start=p.m-1, span=4, end=start+span;
+      const segs = end<=12 ? [[start,span,true,true]] : [[start,12-start,true,false],[0,end-12,false,true]];
+      const slot = p.label==='中間' ? 'i' : 'f';
+      return segs.map(([s,w,dot,label])=>
+        `<div class="g-bar g-fc" style="left:${(s/12*100).toFixed(3)}%;width:${(w/12*100).toFixed(3)}%;background:${color}">`+
+        (dot?'<span class="g-dot"></span>':'')+
+        (label?`<span class="g-amt">${p.label} ${yen(amt)}${adjusted?'※':''}</span><button class="g-x" data-gdel="${r.hIdx}:${slot}" aria-label="この配当予定を削除">×</button>`:'')+
+        `</div>`).join('');
+    }).join('');
+    const now = `<div class="g-now" style="left:${((nowM-1)/12*100).toFixed(3)}%;width:${(100/12).toFixed(3)}%"></div>`;
+    const ctl = r.h
+      ? `<span class="g-ctl"><input class="g-sh" data-gshares="${r.hIdx}" value="${r.h.shares}" inputmode="numeric" aria-label="${name}の株数">株</span>`
+      : '<span class="g-ctl g-sold">売却済</span>';
+    return `<div class="gantt-row"><span class="g-name" title="${name}">${name}</span>${ctl}<div class="g-track">${now}${actBars}${fcBars}</div></div>`;
+  }).join('');
+  const head = `<div class="gantt-head"><span class="g-name">銘柄</span><span class="g-ctl">株数</span><div class="g-months">${
     Array.from({length:12},(_,i)=>`<div class="g-mlabel ${i+1===nowM?'now':''}">${i+1}月</div>`).join('')
   }</div></div>`;
-  g.innerHTML = rows
-    ? `<div class="gantt-inner">${head}${rows}</div><div class="gantt-legend">● = 権利確定月、帯の右端 = 入金見込み月(約3ヶ月後)。金額は中間・期末それぞれの受取概算(税引前)。</div>`
-    : '<div class="gantt-empty">配当と権利確定月が設定された銘柄がありません。「配当を自動取得」で設定できます。</div>';
+  g.innerHTML = `<div class="gantt-inner">${head}${body}</div>`+
+    '<div class="gantt-legend">濃色✓ = 今年の受取済み(配当受取履歴の実額)/薄色 = 予定(● 権利確定月 → 帯の右端 入金見込み月)。※ = 権利確定後に売却した株数を含む受取見込み。× でバーを個別に削除、株数はその場で修正できます(予定の削除は権利確定月の設定を外します)。</div>';
 }
 function renderCalEdit(){
   const box = document.getElementById('calEditRows');
@@ -1080,9 +1141,7 @@ function renderSim(){
 document.addEventListener('input', e=>{
   const t = e.target;
   if(t.dataset.f !== undefined && t.dataset.i !== undefined){
-    if(t.dataset.f === 'date'){
-      holdings[t.dataset.i].date = t.value;
-    } else {
+    {
       const val = parseFloat(String(t.value).replace(/[,，]/g,''));
       if(!isNaN(val)) holdings[t.dataset.i][t.dataset.f] = val;
       // 年間配当を編集したら中間/期末の内訳に按分
@@ -1135,6 +1194,18 @@ document.addEventListener('change', e=>{
   if(e.target.dataset.f !== undefined && e.target.dataset.i !== undefined){
     renderTable();
   }
+  // ガント上の株数調整(入力確定時に全体へ反映)
+  if(e.target.dataset.gshares !== undefined){
+    const h = holdings[e.target.dataset.gshares];
+    const v = parseFloat(String(e.target.value).replace(/[,，]/g,''));
+    if(h && !isNaN(v) && v>=0){
+      h.shares = v;
+      sellSet.clear();
+      saveStore(); renderAll();
+    } else {
+      renderGantt(); // 不正入力は元に戻す
+    }
+  }
 });
 document.addEventListener('click', e=>{
   if(e.target.dataset.del !== undefined){
@@ -1158,6 +1229,23 @@ document.addEventListener('click', e=>{
   if(e.target.dataset.dyear !== undefined){
     divsYear = e.target.dataset.dyear; renderDivs();
   }
+  if(e.target.dataset.gdel !== undefined){
+    // ガント上の予定バー削除 = 該当する権利確定月の設定を外す(金額は保持、設定欄で戻せる)
+    const parts = e.target.dataset.gdel.split(':');
+    const h = holdings[parts[0]];
+    if(h){
+      if(parts[1]==='i') h.divIm = null; else h.divFm = null;
+      const ps = payments(h);
+      if(ps.length) h.div = Math.round(ps.reduce((t,p)=>t+p.amt,0)*100)/100;
+      saveStore();
+      renderSummary(); renderAlloc(); renderTable(); renderCalendar(); renderCalEdit(); renderSim();
+    }
+  }
+  if(e.target.dataset.gactdel !== undefined){
+    // ガント上の実績バー削除 = 配当受取履歴から該当記録を削除
+    divRecs.splice(Number(e.target.dataset.gactdel),1);
+    saveDivs(); renderDivs(); renderCalendar(); renderSim();
+  }
 });
 ['sellShares','sellPrice'].forEach(id=>{
   document.getElementById(id).addEventListener('input', updateSellPL);
@@ -1170,13 +1258,12 @@ document.getElementById('btnAdd').addEventListener('click', ()=>{
     shares:parseFloat(g('fShares').value)||0,
     cost:parseFloat(g('fCost').value)||0,
     price:parseFloat(g('fPrice').value)||0,
-    div:parseFloat(g('fDiv').value)||0,
-    date:g('fDate').value||''
+    div:parseFloat(g('fDiv').value)||0
   };
   if(!h.name || h.shares<=0){ alert('銘柄名と株数を入力してください'); return; }
   holdings.push(h);
   saveStore();
-  ['fCode','fName','fShares','fCost','fPrice','fDiv','fDate'].forEach(id=>g(id).value='');
+  ['fCode','fName','fShares','fCost','fPrice','fDiv'].forEach(id=>g(id).value='');
   renderAll();
 });
 document.getElementById('btnExport').addEventListener('click', ()=>{
@@ -1294,7 +1381,7 @@ function mergeItems(items){
       updated++;
     } else {
       holdings.push({code:String(it.code||'—'), name:String(it.name),
-        shares:it.shares||0, cost:it.cost||0, price:it.price||0, div:0, date:''});
+        shares:it.shares||0, cost:it.cost||0, price:it.price||0, div:0});
       added++;
     }
   });
@@ -1310,7 +1397,7 @@ function showPreview(items){
   pv.innerHTML = '<table class="preview-table"><tr><th>銘柄</th><th>株数</th><th>取得単価</th><th>現在値</th></tr>' +
     items.map(it=>'<tr><td>'+(it.code||'')+' '+(it.name||'')+'</td><td>'+(it.shares??'—')+'</td><td>'+(it.cost??'—')+'</td><td>'+(it.price??'—')+'</td></tr>').join('') +
     '</table><div class="modal-actions"><button class="primary" id="btnDoImport">この'+items.length+'銘柄を取り込む</button></div>' +
-    '<p class="modal-note">「—」の項目は取込後に表で直接入力できます。既存銘柄はコード一致で株数・単価・現在値を更新します(購入日・配当設定は保持)。'+(fundsExcluded?'<b>投資信託は取込対象外のため除外しました。</b>':'')+'</p>';
+    '<p class="modal-note">「—」の項目は取込後に表で直接入力できます。既存銘柄はコード一致で株数・単価・現在値を更新します(配当設定は保持)。'+(fundsExcluded?'<b>投資信託は取込対象外のため除外しました。</b>':'')+'</p>';
   document.getElementById('btnDoImport').addEventListener('click', ()=>{
     const r = mergeItems(parsedItems);
     document.getElementById('pasteModal').hidden = true;
@@ -1442,13 +1529,13 @@ document.getElementById('shotInput').addEventListener('change', async e=>{
         holdings.push({
           code:String(it.code||'—'), name:String(it.name),
           shares:Number(it.shares)||0, cost:Number(it.cost)||0,
-          price:Number(it.price)||0, div:0, date:''
+          price:Number(it.price)||0, div:0
         });
         added++;
       }
     });
     sellSet.clear(); saveStore(); renderAll();
-    setStatus('取込完了: 追加'+added+'件 / 更新'+updated+'件。購入日と配当を確認してください。');
+    setStatus('取込完了: 追加'+added+'件 / 更新'+updated+'件。配当を確認してください。');
   }catch(err){ setStatus('⚠ '+err.message); }
   btn.disabled = false;
 });

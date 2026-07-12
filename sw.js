@@ -1,4 +1,4 @@
-const CACHE = 'kabucho-v6';
+const CACHE = 'kabucho-v7';
 const ASSETS = [
   './',
   './index.html',
@@ -22,6 +22,8 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  // 同期・AI用のAPIは常にネットワークへ(キャッシュしない)
+  if (e.request.url.includes('api.github.com') || e.request.url.includes('api.anthropic.com')) return;
   const isPage = e.request.mode === 'navigate' || e.request.url.includes('index.html');
 
   if (isPage) {

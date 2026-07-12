@@ -329,6 +329,7 @@ footer{
       <button id="btnShot">📷 スクショ取込</button>
       <button id="btnPriceFetch">株価を自動取得</button>
       <button id="btnDivFetch">配当を自動取得</button>
+      <button id="btnSync">☁ 同期</button>
       <button id="btnExport">書き出す</button>
       <button id="btnImport">読み込む</button>
       <button class="ghost" id="btnSample">サンプル</button>
@@ -479,8 +480,33 @@ footer{
   </div>
 </div>
 
+<div class="modal-bg" id="syncModal" hidden>
+  <div class="modal">
+    <h3>PC・スマホ間のデータ同期</h3>
+    <div id="syncSetup">
+      <p class="modal-note">GitHubの<b>非公開Gist</b>を使って、保有銘柄・売却履歴・配当受取履歴を複数の端末で同期します。データはご自身のGitHubアカウント内にのみ保存されます。</p>
+      <p class="modal-note">GitHubの設定(Settings → Developer settings → Personal access tokens)で、<b>gist権限のみ</b>のトークンを作成し、下に貼り付けてください。トークンはこの端末内にのみ保存されます。もう一方の端末でも同じトークンを入力すれば、自動的に同じ同期データに接続されます。</p>
+      <input id="syncToken" placeholder="github_pat_… または ghp_…" style="width:100%;font-family:var(--mono);font-size:12px;padding:8px;border:1px solid var(--rule-strong);border-radius:2px;margin:8px 0" autocomplete="off">
+      <div class="modal-actions">
+        <button class="primary" id="btnSyncConnect">接続する(既存の同期データを探す/なければ作成)</button>
+      </div>
+    </div>
+    <div id="syncActive" hidden>
+      <p class="modal-note">✓ 同期は有効です。データの変更は数秒後に自動送信され、アプリを開いたとき・画面に戻ったとき・30秒ごとに最新データを取得します。</p>
+      <p class="modal-note" id="syncStatusLine">最終同期: —</p>
+      <div class="modal-actions">
+        <button class="primary" id="btnSyncNow">今すぐ同期</button>
+        <button class="ghost" id="btnSyncDisconnect">同期を解除(この端末のみ)</button>
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:6px">
+      <button class="ghost" id="btnSyncClose">閉じる</button>
+    </div>
+  </div>
+</div>
+
 <footer>
-  <p><b>株帳</b> <span style="font-family:var(--mono);font-size:10px">v6</span> はブラウザ内だけで動く帳簿です。入力データはこの端末内にのみ自動保存されます。「スクショ取込」「株価を自動取得」「配当を自動取得」を使う場合のみ、対象の画像・銘柄コードがAnthropic APIに送信されます(APIキーはご自身のものを使用、端末内に保存)。機種変更やバックアップには「帳簿を書き出す」でJSONを保存してください。</p>
+  <p><b>株帳</b> <span style="font-family:var(--mono);font-size:10px">v7</span> はブラウザ内だけで動く帳簿です。入力データはこの端末内に自動保存されます。「スクショ取込」「株価を自動取得」「配当を自動取得」を使う場合のみ対象データがAnthropic APIに、「☁ 同期」を有効にした場合のみ帳簿データがご自身のGitHubアカウントの非公開Gistに送信されます(各キー・トークンは端末内に保存)。バックアップには「書き出す」でJSONを保存してください。</p>
   <p>本ツールは計算・記録のための道具であり、特定の金融商品の売買を推奨するものではありません。税額は概算であり、実際の課税は口座区分・他の所得等により異なります。最終的な判断はご自身の責任で、必要に応じて税理士等の専門家にご相談ください。</p>
 </footer>
 
@@ -524,6 +550,7 @@ function loadStore(){
 }
 function saveStore(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(holdings)); }catch(e){}
+  markDirty();
 }
 let holdings = loadStore();
 let sellSet = new Set();
@@ -538,6 +565,7 @@ function loadSales(){
 }
 function saveSales(){
   try{ localStorage.setItem(SALES_KEY, JSON.stringify(sales)); }catch(e){}
+  markDirty();
 }
 let sales = loadSales();
 function salePL(s){ return s.shares*(s.sellPrice-s.cost); }
@@ -556,6 +584,7 @@ function loadDivs(){
 }
 function saveDivs(){
   try{ localStorage.setItem(DIVS_KEY, JSON.stringify(divRecs)); }catch(e){}
+  markDirty();
 }
 let divRecs = loadDivs();
 
@@ -1621,6 +1650,165 @@ document.getElementById('btnKey').addEventListener('click', askKey);
 
 renderAll();
 
+/* ===== クラウド同期 (GitHub 非公開Gist) ===== */
+const SYNC_KEY = 'kabucho-sync-v1';
+const UPD_KEY  = 'kabucho-updated-v1';
+const SYNC_FILE = 'kabucho-data.json';
+let syncCfg = null;
+try{ syncCfg = JSON.parse(localStorage.getItem(SYNC_KEY)||'null'); }catch(e){}
+let localUpdatedAt = localStorage.getItem(UPD_KEY) || '';
+let applyingRemote = false, syncBusy = false, pushTimer = null;
+
+function saveSyncCfg(){ try{ localStorage.setItem(SYNC_KEY, JSON.stringify(syncCfg)); }catch(e){} }
+function markDirty(){
+  if(applyingRemote) return; // リモート取込による保存では発火しない
+  localUpdatedAt = new Date().toISOString();
+  try{ localStorage.setItem(UPD_KEY, localUpdatedAt); }catch(e){}
+  if(syncCfg){ clearTimeout(pushTimer); pushTimer = setTimeout(pushSync, 2500); }
+}
+function syncEnvelope(){
+  return {app:'kabucho', version:2, updatedAt:localUpdatedAt||new Date().toISOString(), holdings, sales, divRecs};
+}
+async function ghApi(path, opts){
+  const res = await fetch('https://api.github.com'+path, Object.assign({
+    headers:{ 'Authorization':'Bearer '+syncCfg.token, 'Accept':'application/vnd.github+json' }
+  }, opts||{}));
+  if(!res.ok){
+    const msg = res.status===401 ? 'トークンが無効です(401)' : 'GitHub APIエラー('+res.status+')';
+    throw new Error(msg);
+  }
+  return res.json();
+}
+function applyRemote(d){
+  applyingRemote = true;
+  try{
+    holdings = normalizeHoldings(Array.isArray(d.holdings)?d.holdings:[]);
+    if(Array.isArray(d.sales)) sales = d.sales;
+    if(Array.isArray(d.divRecs)) divRecs = d.divRecs;
+    sellSet.clear();
+    saveStore(); saveSales(); saveDivs();
+    localUpdatedAt = d.updatedAt || new Date().toISOString();
+    try{ localStorage.setItem(UPD_KEY, localUpdatedAt); }catch(e){}
+    renderAll();
+  } finally { applyingRemote = false; }
+}
+async function pushSync(){
+  if(!syncCfg || !syncCfg.gistId || syncBusy) return;
+  syncBusy = true;
+  try{
+    const files = {}; files[SYNC_FILE] = {content: JSON.stringify(syncEnvelope())};
+    await ghApi('/gists/'+syncCfg.gistId, {method:'PATCH', body: JSON.stringify({files})});
+    syncCfg.lastSync = new Date().toISOString(); saveSyncCfg(); updateSyncUI();
+  }catch(err){ setStatus('⚠ 同期(送信)に失敗: '+err.message); }
+  syncBusy = false;
+}
+async function pullSync(manual){
+  if(!syncCfg || !syncCfg.gistId || syncBusy) return;
+  syncBusy = true;
+  try{
+    const g = await ghApi('/gists/'+syncCfg.gistId);
+    const f = g.files && g.files[SYNC_FILE];
+    let content = f && f.content;
+    if(f && f.truncated) content = await (await fetch(f.raw_url)).text();
+    if(content){
+      const d = JSON.parse(content);
+      if(d.updatedAt && d.updatedAt > localUpdatedAt){
+        applyRemote(d);
+        if(manual) setStatus('☁ 最新の同期データを取り込みました。');
+      } else if(localUpdatedAt && localUpdatedAt > (d.updatedAt||'')){
+        // ローカルの方が新しい → 送信
+        syncBusy = false;
+        await pushSync();
+        syncBusy = true;
+        if(manual) setStatus('☁ この端末のデータを送信しました。');
+      } else if(manual){
+        setStatus('☁ すでに最新の状態です。');
+      }
+    }
+    syncCfg.lastSync = new Date().toISOString(); saveSyncCfg(); updateSyncUI();
+  }catch(err){ if(manual) setStatus('⚠ 同期に失敗: '+err.message); }
+  syncBusy = false;
+}
+function updateSyncUI(){
+  document.getElementById('btnSync').textContent = syncCfg ? '☁ 同期✓' : '☁ 同期';
+  document.getElementById('syncSetup').hidden  = !!syncCfg;
+  document.getElementById('syncActive').hidden = !syncCfg;
+  if(syncCfg && syncCfg.lastSync){
+    const t = new Date(syncCfg.lastSync);
+    document.getElementById('syncStatusLine').textContent =
+      '最終同期: '+t.getFullYear()+'/'+(t.getMonth()+1)+'/'+t.getDate()+' '+t.getHours()+':'+String(t.getMinutes()).padStart(2,'0');
+  }
+}
+document.getElementById('btnSync').addEventListener('click', ()=>{
+  updateSyncUI();
+  document.getElementById('syncModal').hidden = false;
+});
+document.getElementById('btnSyncClose').addEventListener('click', ()=>{
+  document.getElementById('syncModal').hidden = true;
+});
+document.getElementById('syncModal').addEventListener('click', e=>{
+  if(e.target.id==='syncModal') e.target.hidden = true;
+});
+document.getElementById('btnSyncConnect').addEventListener('click', async ()=>{
+  const token = document.getElementById('syncToken').value.trim();
+  if(!token){ alert('トークンを入力してください'); return; }
+  const btn = document.getElementById('btnSyncConnect');
+  btn.disabled = true;
+  syncCfg = {token};
+  try{
+    // 既存の同期用Gistを探す
+    const list = await ghApi('/gists?per_page=100');
+    const hit = (list||[]).find(g=>g.files && g.files[SYNC_FILE]);
+    if(hit){
+      syncCfg.gistId = hit.id;
+      const g = await ghApi('/gists/'+hit.id);
+      const f = g.files[SYNC_FILE];
+      let content = f && f.content;
+      if(f && f.truncated) content = await (await fetch(f.raw_url)).text();
+      const d = content ? JSON.parse(content) : null;
+      const hasLocal = holdings.length || sales.length || divRecs.length;
+      if(d && d.updatedAt && hasLocal){
+        const useRemote = confirm('既存の同期データが見つかりました。\n\nOK: クラウドのデータをこの端末に取り込む\nキャンセル: この端末のデータでクラウドを上書きする');
+        if(useRemote){ applyRemote(d); }
+        else { localUpdatedAt = new Date().toISOString(); localStorage.setItem(UPD_KEY, localUpdatedAt); await pushSync(); }
+      } else if(d && d.updatedAt){
+        applyRemote(d);
+      } else {
+        localUpdatedAt = new Date().toISOString(); localStorage.setItem(UPD_KEY, localUpdatedAt);
+        await pushSync();
+      }
+    } else {
+      // 新規作成(非公開Gist)
+      localUpdatedAt = new Date().toISOString(); localStorage.setItem(UPD_KEY, localUpdatedAt);
+      const files = {}; files[SYNC_FILE] = {content: JSON.stringify(syncEnvelope())};
+      const res = await ghApi('/gists', {method:'POST', body: JSON.stringify({
+        description:'株帳(Kabucho) データ同期', public:false, files
+      })});
+      syncCfg.gistId = res.id;
+    }
+    syncCfg.lastSync = new Date().toISOString();
+    saveSyncCfg(); updateSyncUI();
+    document.getElementById('syncToken').value = '';
+    setStatus('☁ 同期を開始しました。もう一方の端末でも同じトークンで「接続する」を押してください。');
+  }catch(err){
+    syncCfg = null;
+    alert('接続に失敗しました: '+err.message);
+  }
+  btn.disabled = false;
+});
+document.getElementById('btnSyncNow').addEventListener('click', ()=>pullSync(true));
+document.getElementById('btnSyncDisconnect').addEventListener('click', ()=>{
+  if(!confirm('この端末の同期を解除しますか?(クラウド上のデータと他の端末はそのまま残ります)')) return;
+  syncCfg = null;
+  try{ localStorage.removeItem(SYNC_KEY); }catch(e){}
+  updateSyncUI();
+});
+// 起動時・復帰時・定期の自動同期
+if(syncCfg) pullSync();
+updateSyncUI();
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') pullSync(); });
+window.addEventListener('focus', ()=>pullSync());
+setInterval(()=>{ if(document.visibilityState==='visible') pullSync(); }, 30000);
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
 }
